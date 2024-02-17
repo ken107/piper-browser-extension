@@ -1,0 +1,46 @@
+{
+  "name": "piper-browser-extension",
+  "version": "1.0.0",
+  "description": "Provides Piper neural text-to-speech voices as a browser extension",
+  "scripts": {
+    "build-debug": "webpack --mode=development",
+    "build-release": "webpack --mode=production"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ken107/piper-browser-extension.git"
+  },
+  "keywords": [
+    "text",
+    "to",
+    "speech",
+    "tts",
+    "voice",
+    "speech",
+    "synthesis",
+    "AI",
+    "neural",
+    "piper"
+  ],
+  "author": "Hai Phan <hai.phan@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ken107/piper-browser-extension/issues"
+  },
+  "homepage": "https://github.com/ken107/piper-browser-extension#readme",
+  "devDependencies": {
+    "@types/react": "^18.2.56",
+    "@types/react-dom": "^18.2.19",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "copy-webpack-plugin": "^12.0.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "rxjs": "^7.8.1",
+    "use-immer": "^0.9.0"
+  }
+}

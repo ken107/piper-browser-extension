@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+
+  "name": "__MSG_extension_name__",
+  "short_name": "__MSG_extension_short_name__",
+  "description": "__MSG_extension_description__",
+  "version": "1.0.0",
+  "default_locale": "en",
+
+  "action": {
+    "default_icon": "img/icon.png"
+  },
+  "icons": {
+    "128": "img/icon.png"
+  },
+  "permissions": [
+    "ttsEngine",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}
