@@ -1,9 +1,11 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import config from "./config"
+import { advertiseVoices, createSynthesizer, getVoiceList, piperFetch, sampler } from "./services"
 import { getFile } from "./storage"
-import { MyVoice, PiperVoice } from "./types"
+import { InstallState, ModelConfig, MyVoice, Synthesizer } from "./types"
+import { fetchWithProgress } from "./utils"
+import config from "./config"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -12,12 +14,13 @@ function App() {
   const [state, stateUpdater] = useImmer({
     voiceList: [] as MyVoice[],
     activityLog: "Ready",
+    synthesizers: {} as Record<string, Synthesizer>
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!)
   }
-  const installed = state.voiceList.filter(x => x.isInstalled)
-  const notInstalled = state.voiceList.filter(x => !x.isInstalled)
+  const installed = state.voiceList.filter(x => x.installState == "installed")
+  const notInstalled = state.voiceList.filter(x => x.installState != "installed")
 
 
   //startup
@@ -105,7 +108,9 @@ function App() {
                 <td>{voice.languageName}</td>
                 <td className="text-end pe-2">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td>
-                  <button type="button" className="btn btn-success btn-sm">Install</button>
+                  <button type="button" className="btn btn-success btn-sm"
+                    disabled={voice.installState != "not-installed"}
+                    onClick={() => installVoice(voice)}>{getInstallButtonText(voice.installState)}</button>
                 </td>
               </tr>
             )}
@@ -125,64 +130,30 @@ function App() {
       draft.activityLog += "\n" + text
     })
   }
-}
 
-
-
-async function getVoiceList(): Promise<MyVoice[]> {
-  const blob = await getFile("voices.json", () => piperFetch("voices.json"))
-  const voicesJson: Record<string, PiperVoice> = await blob.text().then(JSON.parse)
-  const voiceList = Object.values(voicesJson)
-    .map<MyVoice>(voice => {
-      const modelFile = Object.keys(voice.files).find(x => x.endsWith(".onnx"))
-      if (!modelFile) throw new Error("Can't identify model file for " + voice.name)
-      return {
-        key: voice.key,
-        name: voice.name,
-        languageCode: voice.language.family.toLowerCase() + "-" + voice.language.region.toUpperCase(),
-        languageName: voice.language.name_native + " [" + voice.language.country_english + "]",
-        quality: voice.quality,
-        modelFile,
-        modelFileSize: voice.files[modelFile].size_bytes,
-        isInstalled: false
-      }
-    })
-  for (const voice of voiceList) {
-    voice.isInstalled = await getFile(voice.modelFile).then(() => true).catch(err => false)
-  }
-  return voiceList
-}
-
-function advertiseVoices(voices: MyVoice[]) {
-  (chrome.ttsEngine as any).updateVoices(
-    voices
-      .map(voice => ({
-        voiceName: voice.name,
-        lang: voice.languageCode,
-        eventTypes: ["start", "end", "error"]
+  function installVoice(voice: MyVoice) {
+    getFile(voice.modelFile, () => fetchWithProgress(voice.modelFile, percent => {
+        stateUpdater(draft => {
+          const voiceDraft = draft.voiceList.find(x => x.key == voice.key)
+          if (voiceDraft) voiceDraft.installState = percent
+        })
       }))
-      .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
-  )
-}
+      .then(async model => {
+        if (!state.synthesizers[voice.key]) {
+          const modelConfig = await piperFetch(voice.modelFile + ".json").then(x => x.text()).then(JSON.parse)
+          stateUpdater(draft => {
+            draft.synthesizers[voice.key] = createSynthesizer(model, modelConfig)
+          })
+        }
+      })
+      .catch(handleError)
+    }
 
-async function piperFetch(file: string): Promise<Blob> {
-  const res = await fetch(config.repoUrl + file)
-  if (!res.ok) throw new Error("Server return " + res.status)
-  return res.blob()
-}
-
-function immediate<T>(func: () => T) {
-  return func()
-}
-
-const sampler = immediate(() => {
-  const audio = new Audio()
-  audio.autoplay = true
-  return {
-    play(voice: MyVoice) {
-      const tokens = voice.modelFile.split("/")
-      tokens.pop()
-      audio.src = config.repoUrl + tokens.join("/") + "/samples/speaker_0.mp3"
+    function getInstallButtonText(installState: InstallState) {
+    switch (installState) {
+      case "not-installed": return "Install"
+      case "installed": return "100%"
+      default: return Math.round(installState) + "%"
     }
   }
-})
+}

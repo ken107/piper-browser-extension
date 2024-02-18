@@ -28,5 +28,20 @@ export interface MyVoice {
   quality: string
   modelFile: string
   modelFileSize: number
-  isInstalled: boolean
+  installState: InstallState
+  loadState: LoadState
+}
+
+export type InstallState = "not-installed"|number|"installed"
+export type LoadState = "not-loaded"|"loaded"|"in-use"
+
+export interface Synthesizer {
+  synthesize(text: string): {
+    startPromise: Promise<void>
+    endPromise: Promise<void>
+  }
+}
+
+export interface ModelConfig {
+  what: number
 }
