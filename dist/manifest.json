@@ -14,8 +14,7 @@
     "128": "img/icon.png"
   },
   "permissions": [
-    "ttsEngine",
-    "storage"
+    "ttsEngine"
   ],
   "background": {
     "service_worker": "service-worker.js"
