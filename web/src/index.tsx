@@ -1,10 +1,8 @@
-import * as ort from "onnxruntime-web"
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, createSynthesizer, deleteVoice, getVoiceList, installVoice, sampler } from "./services"
-import { getFile } from "./storage"
-import { MyVoice, Synthesizer } from "./types"
+import { advertiseVoices, createSynthesizer, deleteVoice, getVoiceList, installVoice, jobManager, requestListener, sampler } from "./services"
+import { MyRequest, MyVoice, Synthesizer } from "./types"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -13,7 +11,7 @@ function App() {
   const [state, stateUpdater] = useImmer({
     voiceList: [] as MyVoice[],
     activityLog: "Ready",
-    synthesizers: {} as Record<string, Synthesizer>
+    synthesizers: new Map<string, Synthesizer>()
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!)
@@ -37,6 +35,15 @@ function App() {
     advertiseVoices(installed.length ? installed : notInstalled)
   }, [
     state.voiceList
+  ])
+
+  //handle requests
+  React.useEffect(() => {
+    requestListener.setHandlers({
+      onSynthesize,
+    })
+  }, [
+    state.synthesizers,
   ])
 
   //scroll activity log
@@ -145,7 +152,7 @@ function App() {
       })
       stateUpdater(draft => {
         draft.voiceList.find(x => x.key == voice.key)!.installState = "installed"
-        draft.synthesizers[voice.key] = createSynthesizer(model, modelConfig)
+        draft.synthesizers.set(voice.key, createSynthesizer(model, modelConfig))
       })
     }
     catch (err) {
@@ -175,12 +182,41 @@ function App() {
   }
   
   function getStatusText(voice: MyVoice) {
-    if (state.synthesizers[voice.key]) {
-      if (state.synthesizers[voice.key].isBusy) return "in use"
+    const synth = state.synthesizers.get(voice.key)
+    if (synth) {
+      if (synth.isBusy) return "in use"
       else return "in memory"
     }
     else {
       return "on disk"
+    }
+  }
+
+  //dependencies: state.synthesizers
+  async function onSynthesize({text, voice}: MyRequest) {
+    if (typeof text != "string" || typeof voice != "string") throw new Error("Bad args")
+    const voiceKey = voice.split(" ")[1]
+    const synth = state.synthesizers.get(voiceKey)
+    if (synth) {
+      stateUpdater(draft => {
+        const draftSynth = draft.synthesizers.get(voiceKey)
+        if (draftSynth) draftSynth.isBusy = true
+      })
+      try {
+        const {endPromise} = await synth.speak(text)
+        const jobId = jobManager.add(endPromise)
+        return jobId
+      }
+      finally {
+        stateUpdater(draft => {
+          const draftSynth = draft.synthesizers.get(voiceKey)
+          if (draftSynth) draftSynth.isBusy = false
+        })
+      }
+    }
+    else {
+      //play audio "Voice is not currently installed"
+      //call parent.requestFocus()
     }
   }
 }

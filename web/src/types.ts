@@ -1,44 +1,48 @@
 
 export interface PiperVoice {
-  key: string
-  name: string
-  language: {
-    code: string
-    family: string
-    region: string
-    name_native: string
-    name_english: string
-    country_english: string
+  readonly key: string
+  readonly name: string
+  readonly language: {
+    readonly code: string
+    readonly family: string
+    readonly region: string
+    readonly name_native: string
+    readonly name_english: string
+    readonly country_english: string
   }
-  quality: string
-  num_speakers: number
-  speaker_id_map: Record<string, number>
-  files: Record<string, {
-    size_bytes: number
-    md5_digest: string
+  readonly quality: string
+  readonly num_speakers: number
+  readonly speaker_id_map: Record<string, number>
+  readonly files: Record<string, {
+    readonly size_bytes: number
+    readonly md5_digest: string
   }>
-  aliases: string[]
+  readonly aliases: string[]
 }
 
 export interface MyVoice {
-  key: string
-  name: string
-  languageCode: string
-  languageName: string
-  quality: string
-  modelFile: string
-  modelFileSize: number
-  installState: "not-installed"|"preparing"|number|"installed"
+  readonly key: string
+  readonly name: string
+  readonly languageCode: string
+  readonly languageName: string
+  readonly quality: string
+  readonly modelFile: string
+  readonly modelFileSize: number
+  readonly installState: InstallState
 }
 
+export type InstallState = "not-installed"|"preparing"|number|"installed"
+
 export interface Synthesizer {
-  isBusy: boolean
-  synthesize(text: string): {
-    startPromise: Promise<void>
-    endPromise: Promise<void>
-  }
+  readonly isBusy: boolean
+  speak(text: string): Promise<{endPromise: Promise<void>}>
 }
 
 export interface ModelConfig {
-  what: number
+  readonly what: number
+}
+
+export interface MyRequest {
+  readonly method: string
+  readonly [prop: string]: unknown
 }

@@ -1,8 +1,8 @@
 import * as ort from "onnxruntime-web"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { ModelConfig, MyVoice, PiperVoice, Synthesizer } from "./types"
-import { fetchWithProgress, immediate } from "./utils"
+import { InstallState, ModelConfig, MyRequest, MyVoice, PiperVoice, Synthesizer } from "./types"
+import { fetchWithProgress, immediate, randomString } from "./utils"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
@@ -11,18 +11,18 @@ export async function getVoiceList(): Promise<MyVoice[]> {
   const blob = await getFile("voices.json", () => piperFetch("voices.json"))
   const voicesJson: Record<string, PiperVoice> = await blob.text().then(JSON.parse)
   const voiceList = Object.values(voicesJson)
-    .map<MyVoice>(voice => {
+    .map(voice => {
       const modelFile = Object.keys(voice.files).find(x => x.endsWith(".onnx"))
       if (!modelFile) throw new Error("Can't identify model file for " + voice.name)
       return {
         key: voice.key,
         name: voice.name,
         languageCode: voice.language.family.toLowerCase() + "-" + voice.language.region.toUpperCase(),
-        languageName: voice.language.name_native + " [" + voice.language.country_english + "]",
+        languageName: voice.language.name_native,
         quality: voice.quality,
         modelFile,
         modelFileSize: voice.files[modelFile].size_bytes,
-        installState: "not-installed",
+        installState: "not-installed" as InstallState,
       }
     })
   for (const voice of voiceList) {
@@ -53,17 +53,16 @@ export async function deleteVoice(voice: MyVoice) {
 
 
 export function advertiseVoices(voices: MyVoice[]) {
-  /*
-  (chrome.ttsEngine as any).updateVoices(
-    voices
+  top?.postMessage({
+    method: "advertiseVoices",
+    voices: voices
       .map(voice => ({
-        voiceName: "Piper " + voice.name,
+        voiceName: "Piper " + voice.key + " (" + voice.languageName + ")",
         lang: voice.languageCode,
         eventTypes: ["start", "end", "error"]
       }))
       .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
-  )
-  */
+  }, "*")
 }
 
 
@@ -88,11 +87,8 @@ export function createSynthesizer(model: Blob, modelConfig: ModelConfig): Synthe
   const session = ort.InferenceSession.create(URL.createObjectURL(model))
   return {
     isBusy: false,
-    synthesize(text) {
-      return {
-        startPromise: Promise.reject("Not impl"),
-        endPromise: Promise.reject("Not impl")
-      }
+    speak(text) {
+      return Promise.reject("Not impl")
     }
   }
 }
@@ -108,3 +104,46 @@ export async function piperFetch(file: string, onProgress?: (percent: number) =>
     return res.blob()
   }
 }
+
+
+export const requestListener = immediate(() => {
+  let handlers: Record<string, (req: MyRequest) => unknown> = {}
+  addEventListener("message", async event => {
+    const req = event.data as MyRequest
+    if (handlers[req.method]) {
+      try {
+        const result = await handlers[req.method](req)
+        if (req.id) event.source!.postMessage({id: req.id, result})
+      }
+      catch (error) {
+        if (req.id) event.source!.postMessage({id: req.id, error})
+      }
+    }
+    else {
+      console.error("No handler for method", req.method)
+    }
+  })
+  return {
+    setHandlers(requestHandlers: typeof handlers) {
+      handlers = requestHandlers
+    }
+  }
+})
+
+
+export const jobManager = immediate(() => {
+  const jobs = new Map<string, Promise<any>>()
+  return {
+    add(job: Promise<any>) {
+      const id = randomString()
+      jobs.set(id, job)
+      job.finally(() => setTimeout(() => jobs.delete(id), 5000))
+      return id
+    },
+    wait<T>(id: string): Promise<T> {
+      const job = jobs.get(id)
+      if (!job) throw new Error("No job with id " + id)
+      return job
+    }
+  }
+})

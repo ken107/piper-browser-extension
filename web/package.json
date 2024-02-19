@@ -4,7 +4,8 @@
   "description": "Provides Piper neural text-to-speech voices as a browser extension",
   "scripts": {
     "build-debug": "webpack --mode=development",
-    "build-release": "webpack --mode=production"
+    "build-release": "webpack --mode=production",
+    "deploy-prod": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/piper.ttstool.com"
   },
   "repository": {
     "type": "git",
