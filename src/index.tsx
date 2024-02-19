@@ -1,11 +1,10 @@
+import * as ort from "onnxruntime-web"
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, createSynthesizer, getVoiceList, piperFetch, sampler } from "./services"
+import { advertiseVoices, createSynthesizer, deleteVoice, getVoiceList, installVoice, sampler } from "./services"
 import { getFile } from "./storage"
-import { InstallState, ModelConfig, MyVoice, Synthesizer } from "./types"
-import { fetchWithProgress } from "./utils"
-import config from "./config"
+import { MyVoice, Synthesizer } from "./types"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -63,6 +62,7 @@ function App() {
             <tr>
               <th>Voice</th>
               <th>Language</th>
+              <th>Status</th>
               <th></th>
               <th style={{width: "0%"}}></th>
             </tr>
@@ -76,9 +76,11 @@ function App() {
                   <span className="link" onClick={() => sampler.play(voice)}>sample</span>
                 </td>
                 <td>{voice.languageName}</td>
-                <td className="text-end pe-2">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                <td>
-                  <button type="button" className="btn btn-danger btn-sm">Delete</button>
+                <td>({getStatusText(voice)})</td>
+                <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
+                <td className="text-end ps-2">
+                  <button type="button" className="btn btn-danger btn-sm"
+                    onClick={() => onDelete(voice)}>Delete</button>
                 </td>
               </tr>
             )}
@@ -106,11 +108,11 @@ function App() {
                   <span className="link" onClick={() => sampler.play(voice)}>sample</span>
                 </td>
                 <td>{voice.languageName}</td>
-                <td className="text-end pe-2">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                <td>
+                <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
+                <td className="text-end ps-2">
                   <button type="button" className="btn btn-success btn-sm"
                     disabled={voice.installState != "not-installed"}
-                    onClick={() => installVoice(voice)}>{getInstallButtonText(voice.installState)}</button>
+                    onClick={() => onInstall(voice)}>{getInstallButtonText(voice)}</button>
                 </td>
               </tr>
             )}
@@ -131,29 +133,54 @@ function App() {
     })
   }
 
-  function installVoice(voice: MyVoice) {
-    getFile(voice.modelFile, () => fetchWithProgress(voice.modelFile, percent => {
-        stateUpdater(draft => {
-          const voiceDraft = draft.voiceList.find(x => x.key == voice.key)
-          if (voiceDraft) voiceDraft.installState = percent
-        })
-      }))
-      .then(async model => {
-        if (!state.synthesizers[voice.key]) {
-          const modelConfig = await piperFetch(voice.modelFile + ".json").then(x => x.text()).then(JSON.parse)
-          stateUpdater(draft => {
-            draft.synthesizers[voice.key] = createSynthesizer(model, modelConfig)
-          })
-        }
+  async function onInstall(voice: MyVoice) {
+    try {
+      stateUpdater(draft => {
+        draft.voiceList.find(x => x.key == voice.key)!.installState = "preparing"
       })
-      .catch(handleError)
+      const {model, modelConfig} = await installVoice(voice, percent => {
+        stateUpdater(draft => {
+          draft.voiceList.find(x => x.key == voice.key)!.installState = percent
+        })
+      })
+      stateUpdater(draft => {
+        draft.voiceList.find(x => x.key == voice.key)!.installState = "installed"
+        draft.synthesizers[voice.key] = createSynthesizer(model, modelConfig)
+      })
     }
+    catch (err) {
+      handleError(err)
+    }
+  }
 
-    function getInstallButtonText(installState: InstallState) {
-    switch (installState) {
+  async function onDelete(voice: MyVoice) {
+    try {
+      await deleteVoice(voice)
+      stateUpdater(draft => {
+        draft.voiceList.find(x => x.key == voice.key)!.installState = "not-installed"
+      })
+    }
+    catch (err) {
+      handleError(err)
+    }
+  }
+
+  function getInstallButtonText(voice: MyVoice) {
+    switch (voice.installState) {
       case "not-installed": return "Install"
       case "installed": return "100%"
-      default: return Math.round(installState) + "%"
+      case "preparing": return "Preparing"
+      default: return Math.round(voice.installState) + "%"
+    }
+  }
+  
+  function getStatusText(voice: MyVoice) {
+    if (state.synthesizers[voice.key]) {
+      if (state.synthesizers[voice.key].isBusy) return "in use"
+      else return "in memory"
+    }
+    else {
+      return "on disk"
     }
   }
 }

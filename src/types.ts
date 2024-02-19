@@ -28,14 +28,11 @@ export interface MyVoice {
   quality: string
   modelFile: string
   modelFileSize: number
-  installState: InstallState
-  loadState: LoadState
+  installState: "not-installed"|"preparing"|number|"installed"
 }
 
-export type InstallState = "not-installed"|number|"installed"
-export type LoadState = "not-loaded"|"loaded"|"in-use"
-
 export interface Synthesizer {
+  isBusy: boolean
   synthesize(text: string): {
     startPromise: Promise<void>
     endPromise: Promise<void>

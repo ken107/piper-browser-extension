@@ -13,7 +13,6 @@ const folderPromise = navigator.storage.getDirectory()
   })
 
 export async function getFile(name: string, fetchFile?: () => Promise<Blob>): Promise<Blob> {
-  name = name.replace(/\//g, '$')
   const folder = await folderPromise
   try {
     const file = await folder.getFileHandle(name)
@@ -35,6 +34,11 @@ export async function getFile(name: string, fetchFile?: () => Promise<Blob>): Pr
       throw err
     }
   }
+}
+
+export async function deleteFile(name: string) {
+  const folder = await folderPromise
+  await folder.removeEntry(name)
 }
 
 export function getStats() {

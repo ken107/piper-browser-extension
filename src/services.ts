@@ -1,8 +1,10 @@
 import * as ort from "onnxruntime-web"
 import config from "./config"
-import { getFile } from "./storage"
+import { deleteFile, getFile } from "./storage"
 import { ModelConfig, MyVoice, PiperVoice, Synthesizer } from "./types"
-import { immediate } from "./utils"
+import { fetchWithProgress, immediate } from "./utils"
+
+ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
 
 export async function getVoiceList(): Promise<MyVoice[]> {
@@ -21,11 +23,10 @@ export async function getVoiceList(): Promise<MyVoice[]> {
         modelFile,
         modelFileSize: voice.files[modelFile].size_bytes,
         installState: "not-installed",
-        loadState: "not-loaded"
       }
     })
   for (const voice of voiceList) {
-    voice.installState = await getFile(voice.modelFile)
+    voice.installState = await getFile(voice.key + ".onnx")
       .then(() => "installed" as const)
       .catch(err => "not-installed")
   }
@@ -33,21 +34,42 @@ export async function getVoiceList(): Promise<MyVoice[]> {
 }
 
 
+export async function installVoice(voice: MyVoice, onProgress: (percent: number) => void) {
+  const [model, modelConfig] = await Promise.all([
+    getFile(voice.key + ".onnx", () => piperFetch(voice.modelFile, onProgress)),
+    getFile(voice.key + ".json", () => piperFetch(voice.modelFile + ".json"))
+  ])
+  return {
+    model,
+    modelConfig: JSON.parse(await modelConfig.text()) as ModelConfig
+  }
+}
+
+
+export async function deleteVoice(voice: MyVoice) {
+  await deleteFile(voice.key + ".onnx")
+  await deleteFile(voice.key + ".json")
+}
+
+
 export function advertiseVoices(voices: MyVoice[]) {
+  /*
   (chrome.ttsEngine as any).updateVoices(
     voices
       .map(voice => ({
-        voiceName: voice.name,
+        voiceName: "Piper " + voice.name,
         lang: voice.languageCode,
         eventTypes: ["start", "end", "error"]
       }))
       .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
   )
+  */
 }
 
 
 export const sampler = immediate(() => {
   const audio = new Audio()
+  audio.crossOrigin = "anonymous"
   audio.autoplay = true
   return {
     play(voice: MyVoice) {
@@ -65,6 +87,7 @@ export const sampler = immediate(() => {
 export function createSynthesizer(model: Blob, modelConfig: ModelConfig): Synthesizer {
   const session = ort.InferenceSession.create(URL.createObjectURL(model))
   return {
+    isBusy: false,
     synthesize(text) {
       return {
         startPromise: Promise.reject("Not impl"),
@@ -75,8 +98,13 @@ export function createSynthesizer(model: Blob, modelConfig: ModelConfig): Synthe
 }
 
 
-export async function piperFetch(file: string) {
-  const res = await fetch(config.repoUrl + file)
-  if (!res.ok) throw new Error("Server return " + res.status)
-  return res.blob()
+export async function piperFetch(file: string, onProgress?: (percent: number) => void) {
+  if (onProgress) {
+    return fetchWithProgress(config.repoUrl + file, onProgress)
+  }
+  else {
+    const res = await fetch(config.repoUrl + file)
+    if (!res.ok) throw new Error("Server return " + res.status)
+    return res.blob()
+  }
 }

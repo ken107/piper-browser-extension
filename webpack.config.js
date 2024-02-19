@@ -21,6 +21,11 @@ module.exports = env => ({
     filename: 'bundle.js',
   },
   plugins: [
-    new CopyPlugin({patterns: ['dist']})
+    new CopyPlugin({
+      patterns: [
+        'dist',
+        { from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', to: '[name][ext]' }
+      ]
+    })
   ],
 })

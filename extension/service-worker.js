@@ -1,6 +1,6 @@
 
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({
-    url: chrome.runtime.getURL("index.html")
+    url: "http://localhost:8080/"
   })
 })
