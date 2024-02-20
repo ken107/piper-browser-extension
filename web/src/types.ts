@@ -31,11 +31,11 @@ export interface MyVoice {
   readonly installState: InstallState
 }
 
-export type InstallState = "not-installed"|"preparing"|number|"installed"
+export type InstallState = "not-installed"|"installing"|"installed"
 
 export interface Synthesizer {
   readonly isBusy: boolean
-  speak(text: string): Promise<{endPromise: Promise<void>}>
+  speak(opts: SpeakOptions): Promise<Speech>
 }
 
 export interface ModelConfig {
@@ -43,6 +43,19 @@ export interface ModelConfig {
 }
 
 export interface MyRequest {
-  readonly method: string
   readonly [prop: string]: unknown
+}
+
+export interface SpeakOptions {
+  utterance: string,
+  pitch?: number,
+  rate?: number,
+  volume?: number
+}
+
+export interface Speech {
+  pause(): Promise<void>
+  resume(): Promise<void>
+  stop(): Promise<void>
+  wait(): Promise<void>
 }

@@ -1,8 +1,9 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, createSynthesizer, deleteVoice, getVoiceList, installVoice, jobManager, requestListener, sampler } from "./services"
+import { advertiseVoices, createSynthesizer, deleteVoice, getInstalledVoice, getVoiceList, installVoice, requestListener, sampler, speechManager } from "./services"
 import { MyRequest, MyVoice, Synthesizer } from "./types"
+import { immediate } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -11,7 +12,7 @@ function App() {
   const [state, stateUpdater] = useImmer({
     voiceList: [] as MyVoice[],
     activityLog: "Ready",
-    synthesizers: new Map<string, Synthesizer>()
+    synthesizers: {} as Record<string, Synthesizer|undefined>
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!)
@@ -32,7 +33,7 @@ function App() {
 
   //advertise voices
   React.useEffect(() => {
-    advertiseVoices(installed.length ? installed : notInstalled)
+    if (state.voiceList.length) advertiseVoices(installed.length ? installed : notInstalled)
   }, [
     state.voiceList
   ])
@@ -40,13 +41,15 @@ function App() {
   //handle requests
   React.useEffect(() => {
     requestListener.setHandlers({
-      onSynthesize,
+      speak: onSpeak,
+      wait: onWait,
+      pause: onPause,
+      resume: onResume,
+      stop: onStop,
     })
-  }, [
-    state.synthesizers,
-  ])
+  })
 
-  //scroll activity log
+  //auto-scroll activity log
   React.useEffect(() => {
     refs.activityLog.current.scrollTop = refs.activityLog.current.scrollHeight
   }, [
@@ -117,9 +120,7 @@ function App() {
                 <td>{voice.languageName}</td>
                 <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="text-end ps-2">
-                  <button type="button" className="btn btn-success btn-sm"
-                    disabled={voice.installState != "not-installed"}
-                    onClick={() => onInstall(voice)}>{getInstallButtonText(voice)}</button>
+                  <InstallButton voice={voice} onInstall={onInstall} />
                 </td>
               </tr>
             )}
@@ -128,6 +129,9 @@ function App() {
       }
     </div>
   )
+
+
+  //controllers
 
   function handleError(err: unknown) {
     console.error(err)
@@ -140,19 +144,16 @@ function App() {
     })
   }
 
-  async function onInstall(voice: MyVoice) {
+  async function onInstall(voice: MyVoice, onProgress: (percent: number) => void) {
     try {
       stateUpdater(draft => {
-        draft.voiceList.find(x => x.key == voice.key)!.installState = "preparing"
+        draft.voiceList.find(x => x.key == voice.key)!.installState = "installing"
       })
-      const {model, modelConfig} = await installVoice(voice, percent => {
-        stateUpdater(draft => {
-          draft.voiceList.find(x => x.key == voice.key)!.installState = percent
-        })
-      })
+      const {model, modelConfig} = await installVoice(voice, onProgress)
+      const synth = createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
         draft.voiceList.find(x => x.key == voice.key)!.installState = "installed"
-        draft.synthesizers.set(voice.key, createSynthesizer(model, modelConfig))
+        draft.synthesizers[voice.key] = synth
       })
     }
     catch (err) {
@@ -171,18 +172,9 @@ function App() {
       handleError(err)
     }
   }
-
-  function getInstallButtonText(voice: MyVoice) {
-    switch (voice.installState) {
-      case "not-installed": return "Install"
-      case "installed": return "100%"
-      case "preparing": return "Preparing"
-      default: return Math.round(voice.installState) + "%"
-    }
-  }
   
   function getStatusText(voice: MyVoice) {
-    const synth = state.synthesizers.get(voice.key)
+    const synth = state.synthesizers[voice.key]
     if (synth) {
       if (synth.isBusy) return "in use"
       else return "in memory"
@@ -192,31 +184,87 @@ function App() {
     }
   }
 
-  //dependencies: state.synthesizers
-  async function onSynthesize({text, voice}: MyRequest) {
-    if (typeof text != "string" || typeof voice != "string") throw new Error("Bad args")
-    const voiceKey = voice.split(" ")[1]
-    const synth = state.synthesizers.get(voiceKey)
-    if (synth) {
+  async function onSpeak({utterance, voiceName, pitch, rate, volume}: MyRequest) {
+    if (!(
+      typeof utterance == "string" &&
+      typeof voiceName == "string" &&
+      (typeof pitch == "number" || typeof pitch == "undefined") &&
+      (typeof rate == "number" || typeof rate == "undefined") &&
+      (typeof volume == "number" || typeof volume == "undefined")
+    )) {
+      throw new Error("Bad args")
+    }
+    const voiceKey = voiceName.split(" ")[1]
+    let synth = state.synthesizers[voiceKey]
+    if (!synth) {
+      const {model, modelConfig} = await getInstalledVoice(voiceKey)
+      synth = createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
-        const draftSynth = draft.synthesizers.get(voiceKey)
-        if (draftSynth) draftSynth.isBusy = true
+        draft.synthesizers[voiceKey] = synth
       })
-      try {
-        const {endPromise} = await synth.speak(text)
-        const jobId = jobManager.add(endPromise)
-        return jobId
-      }
-      finally {
-        stateUpdater(draft => {
-          const draftSynth = draft.synthesizers.get(voiceKey)
-          if (draftSynth) draftSynth.isBusy = false
-        })
+    }
+    stateUpdater(draft => {
+      const draftSynth = draft.synthesizers[voiceKey]
+      if (draftSynth) draftSynth.isBusy = true
+    })
+    try {
+      const speech = await synth.speak({utterance, pitch, rate, volume})
+      return {
+        speechId: speechManager.add(speech)
       }
     }
-    else {
-      //play audio "Voice is not currently installed"
-      //call parent.requestFocus()
+    finally {
+      stateUpdater(draft => {
+        const draftSynth = draft.synthesizers[voiceKey]
+        if (draftSynth) draftSynth.isBusy = false
+      })
     }
   }
+
+  async function onWait({speechId}: MyRequest) {
+    if (typeof speechId != "string") throw new Error("Bad args")
+    await speechManager.get(speechId)?.wait()
+  }
+
+  async function onPause({speechId}: MyRequest) {
+    if (typeof speechId != "string") throw new Error("Bad args")
+    await speechManager.get(speechId)?.pause()
+  }
+
+  async function onResume({speechId}: MyRequest) {
+    if (typeof speechId != "string") throw new Error("Bad args")
+    await speechManager.get(speechId)?.resume()
+  }
+
+  async function onStop({speechId}: MyRequest) {
+    if (typeof speechId != "string") throw new Error("Bad args")
+    await speechManager.get(speechId)?.stop()
+  }
+}
+
+
+
+function InstallButton({voice, onInstall}: {
+  voice: MyVoice
+  onInstall(voice: MyVoice, onProgress: (percent: number) => void): void
+}) {
+  const [percent, setPercent] = React.useState<number>(0)
+
+  React.useEffect(() => {
+    if (voice.installState == "not-installed") setPercent(0)
+  }, [voice.installState])
+
+  const text = immediate(() => {
+    switch (voice.installState) {
+      case "not-installed": return "Install"
+      case "installing": return Math.round(percent) + "%"
+      case "installed": return "100%"
+    }
+  })
+
+  return (
+    <button type="button" className="btn btn-success btn-sm"
+      disabled={voice.installState != "not-installed"}
+      onClick={() => onInstall(voice, setPercent)}>{text}</button>
+  )
 }

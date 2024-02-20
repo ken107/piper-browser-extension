@@ -1,7 +1,7 @@
 import * as ort from "onnxruntime-web"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { InstallState, ModelConfig, MyRequest, MyVoice, PiperVoice, Synthesizer } from "./types"
+import { InstallState, ModelConfig, MyRequest, MyVoice, PiperVoice, Speech, Synthesizer } from "./types"
 import { fetchWithProgress, immediate, randomString } from "./utils"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
@@ -31,6 +31,18 @@ export async function getVoiceList(): Promise<MyVoice[]> {
       .catch(err => "not-installed")
   }
   return voiceList
+}
+
+
+export async function getInstalledVoice(voiceKey: string) {
+  const [model, modelConfig] = await Promise.all([
+    getFile(voiceKey + ".onnx"),
+    getFile(voiceKey + ".json")
+  ])
+  return {
+    model,
+    modelConfig: JSON.parse(await modelConfig.text()) as ModelConfig
+  }
 }
 
 
@@ -66,6 +78,11 @@ export function advertiseVoices(voices: MyVoice[]) {
 }
 
 
+export function requestFocus() {
+  top?.postMessage({method: "requestFocus"}, "*")
+}
+
+
 export const sampler = immediate(() => {
   const audio = new Audio()
   audio.crossOrigin = "anonymous"
@@ -87,8 +104,24 @@ export function createSynthesizer(model: Blob, modelConfig: ModelConfig): Synthe
   const session = ort.InferenceSession.create(URL.createObjectURL(model))
   return {
     isBusy: false,
-    speak(text) {
-      return Promise.reject("Not impl")
+    async speak({utterance, pitch, rate, volume}) {
+      console.log("Speaking", {pitch, rate, volume}, utterance)
+      await new Promise(f => setTimeout(f, 1000))
+      const endPromise = new Promise<void>(f => setTimeout(f, 6000))
+      return {
+        async pause() {
+          throw new Error("Not impl")
+        },
+        async resume() {
+          throw new Error("Not impl")
+        },
+        async stop() {
+          throw new Error("Not impl")
+        },
+        wait() {
+          return endPromise
+        }
+      }
     }
   }
 }
@@ -109,8 +142,11 @@ export async function piperFetch(file: string, onProgress?: (percent: number) =>
 export const requestListener = immediate(() => {
   let handlers: Record<string, (req: MyRequest) => unknown> = {}
   addEventListener("message", async event => {
-    const req = event.data as MyRequest
-    if (handlers[req.method]) {
+    const message = event.data as unknown
+    if (typeof message != "object" || message == null) return;
+    const req = message as MyRequest
+    if (req.to != "piper-service") return;
+    if (typeof req.method == "string" && handlers[req.method]) {
       try {
         const result = await handlers[req.method](req)
         if (req.id) event.source!.postMessage({id: req.id, result})
@@ -131,19 +167,17 @@ export const requestListener = immediate(() => {
 })
 
 
-export const jobManager = immediate(() => {
-  const jobs = new Map<string, Promise<any>>()
+export const speechManager = immediate(() => {
+  const speeches = new Map<string, Speech>()
   return {
-    add(job: Promise<any>) {
+    add(speech: Speech) {
       const id = randomString()
-      jobs.set(id, job)
-      job.finally(() => setTimeout(() => jobs.delete(id), 5000))
+      speeches.set(id, speech)
+      speech.wait().finally(() => setTimeout(() => speeches.delete(id), 5000))
       return id
     },
-    wait<T>(id: string): Promise<T> {
-      const job = jobs.get(id)
-      if (!job) throw new Error("No job with id " + id)
-      return job
+    get(id: string) {
+      return speeches.get(id)
     }
   }
 })
