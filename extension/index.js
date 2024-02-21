@@ -8,6 +8,7 @@ const domDispatcher = makeDispatcher("piper-host", {
   advertiseVoices({voices}, sender) {
     chrome.ttsEngine.updateVoices(voices)
     piperService = sender
+    chrome.runtime.sendMessage({to: "service-worker", type: "notification", method: "piperServiceReady"})
   }
 })
 
@@ -27,6 +28,16 @@ window.addEventListener("message", event => {
 //handle messages from extension service worker
 
 const extDispatcher = makeDispatcher("piper-host", {
+  async areYouThere({requestFocus}) {
+    if (requestFocus) {
+      const tab = await chrome.tabs.getCurrent()
+      await Promise.all([
+        chrome.window.update(tab.windowId, {focused: true}),
+        chrome.tabs.update(tab.id, {active: true})
+      ])
+    }
+    return true
+  },
   speak(args) {
     if (!piperService) throw new Error("No service")
     return piperService.sendRequest("speak", args)
@@ -34,15 +45,26 @@ const extDispatcher = makeDispatcher("piper-host", {
   wait(args) {
     return piperService.sendRequest("wait", args)
   },
-  pause() {
-    return piperService.sendRequest("pause")
+  pause(args) {
+    return piperService.sendRequest("pause", args)
   },
-  resume() {
-    return piperService.sendRequest("resume")
+  resume(args) {
+    return piperService.sendRequest("resume", args)
   },
-  stop() {
-    return piperService.sendRequest("stop")
+  stop(args) {
+    return piperService.sendRequest("stop", args)
   }
 })
 
-chrome.runtime.onMessage.addListener(extDispatcher.dispatch)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  return extDispatcher.dispatch(message, sender, res => {
+    if (res.error instanceof Error || res.error instanceof DOMException) {
+      res.error = {
+        name: res.error.name,
+        message: res.error.message,
+        stack: res.error.stack
+      }
+    }
+    sendResponse(res)
+  })
+})
