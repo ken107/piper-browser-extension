@@ -1,8 +1,9 @@
+import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import * as ort from "onnxruntime-web"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { InstallState, ModelConfig, MyRequest, MyVoice, PiperVoice, Speech, Synthesizer } from "./types"
-import { fetchWithProgress, immediate, randomString } from "./utils"
+import { InstallState, ModelConfig, MyVoice, PiperVoice, Speech, Synthesizer } from "./types"
+import { fetchWithProgress, immediate } from "./utils"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
@@ -65,21 +66,20 @@ export async function deleteVoice(voice: MyVoice) {
 
 
 export function advertiseVoices(voices: MyVoice[]) {
-  top?.postMessage({
+  top?.postMessage(<Message>{
+    type: "notification",
+    to: "piper-host",
     method: "advertiseVoices",
-    voices: voices
-      .map(voice => ({
-        voiceName: "Piper " + voice.key + " (" + voice.languageName + ")",
-        lang: voice.languageCode,
-        eventTypes: ["start", "end", "error"]
-      }))
-      .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
+    args: {
+      voices: voices
+        .map(voice => ({
+          voiceName: "Piper " + voice.key + " (" + voice.languageName + ")",
+          lang: voice.languageCode,
+          eventTypes: ["start", "end", "error"]
+        }))
+        .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
+    }
   }, "*")
-}
-
-
-export function requestFocus() {
-  top?.postMessage({method: "requestFocus"}, "*")
 }
 
 
@@ -139,31 +139,10 @@ export async function piperFetch(file: string, onProgress?: (percent: number) =>
 }
 
 
-export const requestListener = immediate(() => {
-  let handlers: Record<string, (req: MyRequest) => unknown> = {}
-  addEventListener("message", async event => {
-    const message = event.data as unknown
-    if (typeof message != "object" || message == null) return;
-    const req = message as MyRequest
-    if (req.to != "piper-service") return;
-    if (typeof req.method == "string" && handlers[req.method]) {
-      try {
-        const result = await handlers[req.method](req)
-        if (req.id) event.source!.postMessage({id: req.id, result})
-      }
-      catch (error) {
-        if (req.id) event.source!.postMessage({id: req.id, error})
-      }
-    }
-    else {
-      console.error("No handler for method", req.method)
-    }
-  })
-  return {
-    setHandlers(requestHandlers: typeof handlers) {
-      handlers = requestHandlers
-    }
-  }
+export const messageDispatcher = makeDispatcher("piper-service", {})
+
+addEventListener("message", event => {
+  messageDispatcher.dispatch(event.data, null, res => event.source!.postMessage(res, {targetOrigin: event.origin}))
 })
 
 
@@ -171,9 +150,9 @@ export const speechManager = immediate(() => {
   const speeches = new Map<string, Speech>()
   return {
     add(speech: Speech) {
-      const id = randomString()
+      const id = String(Math.random())
       speeches.set(id, speech)
-      speech.wait().finally(() => setTimeout(() => speeches.delete(id), 5000))
+      speech.wait().finally(() => speeches.delete(id))
       return id
     },
     get(id: string) {

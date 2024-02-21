@@ -42,10 +42,6 @@ export interface ModelConfig {
   readonly what: number
 }
 
-export interface MyRequest {
-  readonly [prop: string]: unknown
-}
-
 export interface SpeakOptions {
   utterance: string,
   pitch?: number,

@@ -3,10 +3,6 @@ export function immediate<T>(func: () => T) {
   return func()
 }
 
-export function randomString() {
-  return String(Math.random()).slice(2)
-}
-
 export async function* iterateStream<T>(stream: ReadableStream<T>) {
   const reader = stream.getReader()
   try {

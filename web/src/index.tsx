@@ -1,8 +1,8 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, createSynthesizer, deleteVoice, getInstalledVoice, getVoiceList, installVoice, requestListener, sampler, speechManager } from "./services"
-import { MyRequest, MyVoice, Synthesizer } from "./types"
+import { advertiseVoices, createSynthesizer, deleteVoice, getInstalledVoice, getVoiceList, installVoice, messageDispatcher, sampler, speechManager } from "./services"
+import { MyVoice, Synthesizer } from "./types"
 import { immediate } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
@@ -40,7 +40,7 @@ function App() {
 
   //handle requests
   React.useEffect(() => {
-    requestListener.setHandlers({
+    messageDispatcher.updateHandlers({
       speak: onSpeak,
       wait: onWait,
       pause: onPause,
@@ -184,7 +184,7 @@ function App() {
     }
   }
 
-  async function onSpeak({utterance, voiceName, pitch, rate, volume}: MyRequest) {
+  async function onSpeak({utterance, voiceName, pitch, rate, volume}: Record<string, unknown>) {
     if (!(
       typeof utterance == "string" &&
       typeof voiceName == "string" &&
@@ -221,22 +221,22 @@ function App() {
     }
   }
 
-  async function onWait({speechId}: MyRequest) {
+  async function onWait({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
     await speechManager.get(speechId)?.wait()
   }
 
-  async function onPause({speechId}: MyRequest) {
+  async function onPause({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
     await speechManager.get(speechId)?.pause()
   }
 
-  async function onResume({speechId}: MyRequest) {
+  async function onResume({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
     await speechManager.get(speechId)?.resume()
   }
 
-  async function onStop({speechId}: MyRequest) {
+  async function onStop({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
     await speechManager.get(speechId)?.stop()
   }
