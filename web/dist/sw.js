@@ -3,7 +3,7 @@ const myCacheName = 'piper-v1'
 
 self.addEventListener('install', event => event.waitUntil(populateCache()))
 self.addEventListener('activate', event => event.waitUntil(removeOldCaches()))
-self.addEventListener('fetch', event => event.respondWith(caches.match(event.request)))
+self.addEventListener('fetch', event => event.respondWith(handleFetch(event.request)))
 
 
 async function populateCache() {
@@ -21,4 +21,8 @@ async function removeOldCaches() {
   for (const key of await caches.keys()) {
     if (key != myCacheName) await caches.delete(key)
   }
+}
+
+async function handleFetch(request) {
+  return await caches.match(request) || fetch(request)
 }
