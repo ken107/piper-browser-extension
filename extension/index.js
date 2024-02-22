@@ -32,7 +32,7 @@ const extDispatcher = makeDispatcher("piper-host", {
     if (requestFocus) {
       const tab = await chrome.tabs.getCurrent()
       await Promise.all([
-        chrome.window.update(tab.windowId, {focused: true}),
+        chrome.windows.update(tab.windowId, {focused: true}),
         chrome.tabs.update(tab.id, {active: true})
       ])
     }
