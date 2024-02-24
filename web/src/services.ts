@@ -1,11 +1,8 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import * as ort from "onnxruntime-web"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { InstallState, ModelConfig, MyVoice, PiperVoice, Speech, Synthesizer } from "./types"
+import { InstallState, ModelConfig, MyVoice, PiperVoice, Speech } from "./types"
 import { fetchWithProgress, immediate } from "./utils"
-
-ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
 
 export async function getVoiceList(): Promise<MyVoice[]> {
@@ -98,33 +95,6 @@ export const sampler = immediate(() => {
     }
   }
 })
-
-
-export function createSynthesizer(model: Blob, modelConfig: ModelConfig): Synthesizer {
-  const session = ort.InferenceSession.create(URL.createObjectURL(model))
-  return {
-    isBusy: false,
-    async speak({utterance, pitch, rate, volume}) {
-      console.log("Speaking", {pitch, rate, volume}, utterance)
-      await new Promise(f => setTimeout(f, 1000))
-      const endPromise = new Promise<void>(f => setTimeout(f, 6000))
-      return {
-        async pause() {
-          throw new Error("Not impl")
-        },
-        async resume() {
-          throw new Error("Not impl")
-        },
-        async stop() {
-          throw new Error("Not impl")
-        },
-        wait() {
-          return endPromise
-        }
-      }
-    }
-  }
-}
 
 
 export async function piperFetch(file: string, onProgress?: (percent: number) => void) {

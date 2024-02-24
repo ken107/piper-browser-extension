@@ -1,7 +1,8 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, createSynthesizer, deleteVoice, getInstalledVoice, getVoiceList, installVoice, messageDispatcher, sampler, speechManager } from "./services"
+import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, messageDispatcher, sampler, speechManager } from "./services"
+import { createSynthesizer } from "./synthesizer"
 import { MyVoice, Synthesizer } from "./types"
 import { immediate } from "./utils"
 

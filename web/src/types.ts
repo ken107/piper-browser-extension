@@ -39,7 +39,20 @@ export interface Synthesizer {
 }
 
 export interface ModelConfig {
-  readonly what: number
+  audio: {
+    sample_rate: number
+  }
+  espeak: {
+    voice: string
+  }
+  inference: {
+    noise_scale: number
+    length_scale: number
+    noise_w: number
+  }
+  phoneme_type?: "espeak"|"text"
+  phoneme_map: Record<string, string[]>
+  phoneme_id_map: Record<string, number[]>
 }
 
 export interface SpeakOptions {
