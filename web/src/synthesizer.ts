@@ -1,11 +1,12 @@
 import * as ort from "onnxruntime-web"
-import { ModelConfig, Synthesizer } from "./types"
+import * as rxjs from "rxjs"
 import config from "./config"
+import { ModelConfig, SpeakOptions, Speech, Synthesizer } from "./types"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
 
-export function createSynthesizer(model: Blob, modelConfig: ModelConfig): Synthesizer {
+export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
   switch (modelConfig.phoneme_type) {
     case undefined:
     case "espeak":
@@ -13,35 +14,60 @@ export function createSynthesizer(model: Blob, modelConfig: ModelConfig): Synthe
     default:
       throw new Error("Unsupported phoneme_type " + modelConfig.phoneme_type)
   }
-  const session = ort.InferenceSession.create(URL.createObjectURL(model))
+  const session = await ort.InferenceSession.create(URL.createObjectURL(model))
   return {
     isBusy: false,
-    async speak({utterance, pitch, rate, volume}) {
-      console.log("Speaking", {pitch, rate, volume}, utterance)
-      const phonemes = await phonemize(utterance, modelConfig)
-      const phonemeIds = toPhonemeIds(phonemes, modelConfig)
-      const endPromise = new Promise<void>(f => setTimeout(f, 6000))
-      return {
-        async pause() {
-          throw new Error("Not impl")
-        },
-        async resume() {
-          throw new Error("Not impl")
-        },
-        async stop() {
-          throw new Error("Not impl")
-        },
-        wait() {
-          return endPromise
-        }
-      }
+    speak(opts) {
+      return speak(session, modelConfig, opts)
     }
   }
 }
 
 
-async function phonemize(text: string, modelConfig: ModelConfig) {
-  const res = await fetch(config.serviceUrl + "/phonemize?capabilities=phonemize-1.0", {
+async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {utterance, pitch, rate, volume}: SpeakOptions): Promise<Speech> {
+  const sentences = await phonemize(utterance, modelConfig)
+  const audioPlayer = makeAudioPlayer(modelConfig.audio.sample_rate, 1)
+  const playback = rxjs.from(sentences)
+    .pipe(
+      rxjs.concatMap(async phonemes => {
+        const phonemeIds = toPhonemeIds(phonemes, modelConfig)
+        const start = Date.now()
+        const {output} = await session.run({
+          input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
+          input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
+          scales: new ort.Tensor('float32', [
+            modelConfig.inference.noise_scale,
+            modelConfig.inference.length_scale,
+            modelConfig.inference.noise_w
+          ])
+        })
+        console.debug("Synthesized in", Date.now()-start, "ms", phonemes, phonemeIds)
+        await audioPlayer.play(output.data as Float32Array)
+      })
+    )
+  let subscription: rxjs.Subscription
+  const finishPromise = new Promise<void>((f,r) => subscription = playback.subscribe({complete: f, error: r}))
+  finishPromise.finally(() => audioPlayer.close())
+  return {
+    async pause() {
+      await audioPlayer.pause()
+    },
+    async resume() {
+      await audioPlayer.resume()
+    },
+    async stop() {
+      await audioPlayer.pause()
+      subscription.unsubscribe()
+    },
+    wait() {
+      return finishPromise
+    }
+  }
+}
+
+
+async function phonemize(text: string, modelConfig: ModelConfig): Promise<string[][]> {
+  const res = await fetch(config.serviceUrl + "/phonemizer?capabilities=phonemize-1.0", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
@@ -51,29 +77,55 @@ async function phonemize(text: string, modelConfig: ModelConfig) {
     })
   })
   if (!res.ok) throw new Error("Server return " + res.status)
-  const result = await res.json() as {
-    text: string
-    phonemes: string[][]
-  }
+  const result = await res.json() as {text: string, phonemes: string[][]}
   if (result.text != text) throw new Error("Unexpected")
   return result.phonemes
 }
 
 
-function toPhonemeIds(phonemes: string[][], modelConfig: ModelConfig): number[][] {
+function toPhonemeIds(phonemes: string[], modelConfig: ModelConfig): number[] {
   const missing = [] as string[]
-  const phonemeIds = phonemes
-    .map(sentence => {
-      const ids = [] as number[]
-      for (const phoneme of sentence) {
-        const mapping = modelConfig.phoneme_id_map[phoneme]
-        if (mapping) ids.push(mapping[0])
-        else missing.push(phoneme)
-      }
-      return ids
-    })
-    .filter(x => x.length)
-
+  const phonemeIds = [] as number[]
+  for (const phoneme of phonemes) {
+    const mapping = modelConfig.phoneme_id_map[phoneme]
+    if (mapping) phonemeIds.push(...mapping)
+    else missing.push(phoneme)
+  }
   if (missing.length) console.warn("Missing mapping for phonemes", missing)
   return phonemeIds
+}
+
+
+function makeAudioPlayer(sampleRate: number, numChannels: number) {
+  const audioCtx = new window.AudioContext({sampleRate})
+  return {
+    play(pcmData: Float32Array) {
+      const source = audioCtx.createBufferSource()
+      source.buffer = makeAudioBuffer(pcmData)
+      source.connect(audioCtx.destination)
+      return new Promise(f => {
+        source.onended = f
+        source.start()
+      })
+    },
+    async pause() {
+      await audioCtx.suspend()
+    },
+    async resume() {
+      await audioCtx.resume()
+    },
+    close() {
+      audioCtx.close().catch(console.error)
+    }
+  }
+  function makeAudioBuffer(pcmData: Float32Array) {
+    const buffer = audioCtx.createBuffer(numChannels, pcmData.length / numChannels, sampleRate)
+    for (let channel = 0; channel < numChannels; channel++) {
+      const nowBuffering = buffer.getChannelData(channel)
+      for (let i = 0; i < pcmData.length / numChannels; i++) {
+        nowBuffering[i] = pcmData[i * numChannels + channel]
+      }
+    }
+    return buffer
+  }
 }

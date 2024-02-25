@@ -62,6 +62,8 @@ function App() {
     <div className="container">
       <h2 className="text-muted">Activity Log</h2>
       <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={state.activityLog} />
+      <button type="button" className="btn btn-primary"
+        onClick={test}>Test</button>
 
       <h2 className="text-muted">Installed Voices ({installed.length})</h2>
       {installed.length == 0 &&
@@ -151,7 +153,7 @@ function App() {
         draft.voiceList.find(x => x.key == voice.key)!.installState = "installing"
       })
       const {model, modelConfig} = await installVoice(voice, onProgress)
-      const synth = createSynthesizer(model, modelConfig)
+      const synth = await createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
         draft.voiceList.find(x => x.key == voice.key)!.installState = "installed"
         draft.synthesizers[voice.key] = synth
@@ -199,7 +201,7 @@ function App() {
     let synth = state.synthesizers[voiceKey]
     if (!synth) {
       const {model, modelConfig} = await getInstalledVoice(voiceKey)
-      synth = createSynthesizer(model, modelConfig)
+      synth = await createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
         draft.synthesizers[voiceKey] = synth
       })
@@ -240,6 +242,13 @@ function App() {
   async function onStop({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
     await speechManager.get(speechId)?.stop()
+  }
+
+  function test() {
+    onSpeak({
+      utterance: `Hi, how are you doing over there? Can you tell me please?`,
+      voiceName: "Piper en_GB-southern_english_female-low (English)"
+    })
   }
 }
 
