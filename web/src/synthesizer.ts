@@ -5,10 +5,19 @@ import { ModelConfig, SpeakOptions, Speech, Synthesizer } from "./types"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
+const defaults = {
+  phonemeType: "espeak",
+  sampleRate: 22050,
+  channels: 1,
+  noiseScale: 0.667,
+  lengthScale: 1,
+  noiseW: 0.8,
+  sentenceSilenceSeconds: .2,
+} as const
+
 
 export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
-  switch (modelConfig.phoneme_type) {
-    case undefined:
+  switch (modelConfig.phoneme_type ?? defaults.phonemeType) {
     case "espeak":
       break
     default:
@@ -26,7 +35,7 @@ export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): 
 
 async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {utterance, pitch, rate, volume}: SpeakOptions): Promise<Speech> {
   const sentences = await phonemize(utterance, modelConfig)
-  const audioPlayer = makeAudioPlayer(modelConfig.audio.sample_rate, 1)
+  const audioPlayer = makeAudioPlayer(modelConfig.audio?.sample_rate ?? defaults.sampleRate, defaults.channels)
   const playback = rxjs.from(sentences)
     .pipe(
       rxjs.concatMap(async phonemes => {
@@ -36,9 +45,9 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
           input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
           input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
           scales: new ort.Tensor('float32', [
-            modelConfig.inference.noise_scale,
-            modelConfig.inference.length_scale,
-            modelConfig.inference.noise_w
+            modelConfig.inference?.noise_scale ?? defaults.noiseScale,
+            modelConfig.inference?.length_scale ?? defaults.lengthScale,
+            modelConfig.inference?.noise_w ?? defaults.noiseW
           ])
         })
         console.debug("Synthesized in", Date.now()-start, "ms", phonemes, phonemeIds)
@@ -67,6 +76,7 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
 
 
 async function phonemize(text: string, modelConfig: ModelConfig): Promise<string[][]> {
+  if (!modelConfig.espeak?.voice) throw new Error("Missing modelConfig.espeak.voice")
   const res = await fetch(config.serviceUrl + "/phonemizer?capabilities=phonemize-1.0", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
@@ -84,6 +94,7 @@ async function phonemize(text: string, modelConfig: ModelConfig): Promise<string
 
 
 function toPhonemeIds(phonemes: string[], modelConfig: ModelConfig): number[] {
+  if (!modelConfig.phoneme_id_map) throw new Error("Missing modelConfig.phoneme_id_map")
   const missing = [] as string[]
   const phonemeIds = [] as number[]
   for (const phoneme of phonemes) {
