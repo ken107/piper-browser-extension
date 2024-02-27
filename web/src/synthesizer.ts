@@ -1,3 +1,4 @@
+import { makeStateMachine } from "@lsdsoftware/state-machine"
 import * as ort from "onnxruntime-web"
 import * as rxjs from "rxjs"
 import config from "./config"
@@ -63,35 +64,123 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
 
   const sentences = await phonemize(utterance, modelConfig)
   const audioPlayer = makeAudioPlayer(sampleRate, numChannels)
-  const playback = rxjs.from(sentences)
-    .pipe(
-      rxjs.concatMap(async phonemes => {
-        //TODO: handle phoneme_silence
-        const phonemeIds = toPhonemeIds(phonemes, modelConfig)
-        const start = Date.now()
-        const {output} = await session.run({
-          input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
-          input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
-          scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
-        })
-        console.debug("Synthesized in", Date.now()-start, "ms", phonemes, phonemeIds)
-        await audioPlayer.play(output.data as Float32Array, sentenceSilenceSeconds)
-      })
-    )
-  let subscription: rxjs.Subscription
-  const finishPromise = new Promise<void>((f,r) => subscription = playback.subscribe({complete: f, error: r}))
+  const finishSubject = new rxjs.Subject<void>()
+  const finishPromise = rxjs.firstValueFrom(finishSubject, {defaultValue: undefined as void})
   finishPromise.finally(() => audioPlayer.close())
+
+  async function synthesize(phonemes: string[]): Promise<Float32Array> {
+    //TODO: handle phoneme_silence
+    const phonemeIds = toPhonemeIds(phonemes, modelConfig)
+    const start = Date.now()
+    const {output} = await session.run({
+      input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
+      input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
+      scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
+    })
+    console.debug("Synthesized in", Date.now()-start, "ms", phonemes, phonemeIds)
+    return output.data as Float32Array
+  }
+
+  let index = 0
+  const sm = makeStateMachine({
+    IDLE: {
+      start() {
+        if (index < sentences.length) {
+          synthesize(sentences[index])
+            .then(pcmData => sm.trigger("onSynthesized", pcmData))
+            .catch(err => sm.trigger("onError", err))
+          return "SYNTHESIZING"
+        }
+      }
+    },
+    SYNTHESIZING: {
+      onSynthesized(pcmData: Float32Array) {
+        audioPlayer.play(pcmData, sentenceSilenceSeconds).then(() => sm.trigger("onEnded"))
+        return "PLAYING"
+      },
+      onError(err: unknown) {
+        finishSubject.error(err)
+        return "DONE"
+      },
+      pause() {
+        return "SYNTHESIZING_PAUSED"
+      },
+      resume() {},
+      stop() {
+        finishSubject.error(new Error("interrupted"))
+        return "DONE"
+      }
+    },
+    SYNTHESIZING_PAUSED: {
+      onTransitionIn(this: {pcmData?: Float32Array}) {
+        this.pcmData = undefined
+      },
+      onSynthesized(this: {pcmData?: Float32Array}, pcmData: Float32Array) {
+        this.pcmData = pcmData
+      },
+      onError(err: unknown) {
+        finishSubject.error(err)
+        return "DONE"
+      },
+      pause() {},
+      resume(this: {pcmData?: Float32Array}) {
+        if (this.pcmData) {
+          audioPlayer.play(this.pcmData, sentenceSilenceSeconds).then(() => sm.trigger("onEnded"))
+          return "PLAYING"
+        }
+        else {
+          return "SYNTHESIZING"
+        }
+      },
+      stop() {
+        finishSubject.error(new Error("interrupted"))
+        return "DONE"
+      }
+    },
+    PLAYING: {
+      pause() {
+        audioPlayer.pause()
+      },
+      resume() {
+        audioPlayer.resume()
+      },
+      onEnded() {
+        if (++index < sentences.length) {
+          synthesize(sentences[index])
+            .then(pcmData => sm.trigger("onSynthesized", pcmData))
+            .catch(err => sm.trigger("onError", err))
+          return "SYNTHESIZING"
+        }
+        else {
+          finishSubject.complete()
+          return "DONE"
+        }
+      },
+      stop() {
+        finishSubject.error(new Error("interrupted"))
+        return "DONE"
+      }
+    },
+    DONE: {
+      onSynthesized() {},
+      onError() {},
+      onEnded() {},
+      pause() {},
+      resume() {},
+      stop() {}
+    }
+  })
+
+  sm.trigger("start")
   return {
     async pause() {
-      //TODO: must be made into a state machine to handle intermediate loading states
-      await audioPlayer.pause()
+      sm.trigger("pause")
     },
     async resume() {
-      await audioPlayer.resume()
+      sm.trigger("resume")
     },
     async stop() {
-      await audioPlayer.pause()
-      subscription.unsubscribe()
+      sm.trigger("stop")
     },
     wait() {
       return finishPromise
@@ -162,11 +251,11 @@ function makeAudioPlayer(sampleRate: number, numChannels: number) {
         source.start()
       })
     },
-    async pause() {
-      await audioCtx.suspend()
+    pause() {
+      audioCtx.suspend().catch(console.error)
     },
-    async resume() {
-      await audioCtx.resume()
+    resume() {
+      audioCtx.resume().catch(console.error)
     },
     close() {
       audioCtx.close().catch(console.error)
