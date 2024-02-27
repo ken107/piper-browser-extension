@@ -25,6 +25,7 @@ export interface MyVoice {
   readonly name: string
   readonly languageCode: string
   readonly languageName: string
+  readonly languageCountry: string
   readonly quality: string
   readonly modelFile: string
   readonly modelFileSize: number

@@ -17,6 +17,7 @@ export async function getVoiceList(): Promise<MyVoice[]> {
         name: voice.name,
         languageCode: voice.language.family.toLowerCase() + "-" + voice.language.region.toUpperCase(),
         languageName: voice.language.name_native,
+        languageCountry: voice.language.country_english,
         quality: voice.quality,
         modelFile,
         modelFileSize: voice.files[modelFile].size_bytes,

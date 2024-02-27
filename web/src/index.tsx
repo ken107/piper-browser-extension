@@ -88,7 +88,7 @@ function App() {
                   <span className="me-1">[{voice.quality}]</span>
                   <span className="link" onClick={() => sampler.play(voice)}>sample</span>
                 </td>
-                <td>{voice.languageName}</td>
+                <td>{voice.languageName} ({voice.languageCountry})</td>
                 <td>({getStatusText(voice)})</td>
                 <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="text-end ps-2">
@@ -120,7 +120,7 @@ function App() {
                   <span className="me-1">[{voice.quality}]</span>
                   <span className="link" onClick={() => sampler.play(voice)}>sample</span>
                 </td>
-                <td>{voice.languageName}</td>
+                <td>{voice.languageName} ({voice.languageCountry})</td>
                 <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="text-end ps-2">
                   <InstallButton voice={voice} onInstall={onInstall} />

@@ -16,6 +16,24 @@ const defaults = {
 } as const
 
 
+//from: piper-phonemize/src/phoneme_ids.hpp
+const phonemeIdConfig = {
+  pad: '_',
+  bos: '^',
+  eos: '$',
+
+  // Every other phoneme id is pad
+  interspersePad: true,
+
+  // Add beginning of sentence (bos) symbol at start
+  addBos: true,
+
+  // Add end of sentence (eos) symbol at end
+  addEos: true,
+} as const
+
+
+
 export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
   switch (modelConfig.phoneme_type ?? defaults.phonemeType) {
     case "espeak":
@@ -93,16 +111,30 @@ async function phonemize(text: string, modelConfig: ModelConfig): Promise<string
 }
 
 
+//from: piper-phonemize/src/phoneme_ids.cpp
 function toPhonemeIds(phonemes: string[], modelConfig: ModelConfig): number[] {
   if (!modelConfig.phoneme_id_map) throw new Error("Missing modelConfig.phoneme_id_map")
-  const missing = [] as string[]
+  const missing = new Set<string>()
   const phonemeIds = [] as number[]
+  if (phonemeIdConfig.addBos) {
+    phonemeIds.push(...modelConfig.phoneme_id_map[phonemeIdConfig.bos])
+    if (phonemeIdConfig.interspersePad)
+      phonemeIds.push(...modelConfig.phoneme_id_map[phonemeIdConfig.pad])
+  }
   for (const phoneme of phonemes) {
     const mapping = modelConfig.phoneme_id_map[phoneme]
-    if (mapping) phonemeIds.push(...mapping)
-    else missing.push(phoneme)
+    if (!mapping) {
+      missing.add(phoneme)
+      continue
+    }
+    phonemeIds.push(...mapping)
+    if (phonemeIdConfig.interspersePad)
+      phonemeIds.push(...modelConfig.phoneme_id_map[phonemeIdConfig.pad])
   }
-  if (missing.length) console.warn("Missing mapping for phonemes", missing)
+  if (phonemeIdConfig.addEos) {
+    phonemeIds.push(...modelConfig.phoneme_id_map[phonemeIdConfig.eos])
+  }
+  if (missing.size) console.warn("Missing mapping for phonemes", missing)
   return phonemeIds
 }
 
