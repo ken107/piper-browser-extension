@@ -5,6 +5,8 @@ import { ModelConfig, SpeakOptions, Speech, Synthesizer } from "./types"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
+
+//from: piper/src/cpp/piper.hpp
 const defaults = {
   phonemeType: "espeak",
   sampleRate: 22050,
@@ -52,24 +54,28 @@ export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): 
 
 
 async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {utterance, pitch, rate, volume}: SpeakOptions): Promise<Speech> {
+  const sampleRate = modelConfig.audio?.sample_rate ?? defaults.sampleRate
+  const numChannels = defaults.channels
+  const noiseScale = modelConfig.inference?.noise_scale ?? defaults.noiseScale
+  const lengthScale = modelConfig.inference?.length_scale ?? defaults.lengthScale
+  const noiseW = modelConfig.inference?.noise_w ?? defaults.noiseW
+  const sentenceSilenceSeconds = defaults.sentenceSilenceSeconds
+
   const sentences = await phonemize(utterance, modelConfig)
-  const audioPlayer = makeAudioPlayer(modelConfig.audio?.sample_rate ?? defaults.sampleRate, defaults.channels)
+  const audioPlayer = makeAudioPlayer(sampleRate, numChannels)
   const playback = rxjs.from(sentences)
     .pipe(
       rxjs.concatMap(async phonemes => {
+        //TODO: handle phoneme_silence
         const phonemeIds = toPhonemeIds(phonemes, modelConfig)
         const start = Date.now()
         const {output} = await session.run({
           input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
           input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
-          scales: new ort.Tensor('float32', [
-            modelConfig.inference?.noise_scale ?? defaults.noiseScale,
-            modelConfig.inference?.length_scale ?? defaults.lengthScale,
-            modelConfig.inference?.noise_w ?? defaults.noiseW
-          ])
+          scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
         })
         console.debug("Synthesized in", Date.now()-start, "ms", phonemes, phonemeIds)
-        await audioPlayer.play(output.data as Float32Array)
+        await audioPlayer.play(output.data as Float32Array, sentenceSilenceSeconds)
       })
     )
   let subscription: rxjs.Subscription
@@ -77,6 +83,7 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
   finishPromise.finally(() => audioPlayer.close())
   return {
     async pause() {
+      //TODO: must be made into a state machine to handle intermediate loading states
       await audioPlayer.pause()
     },
     async resume() {
@@ -142,10 +149,14 @@ function toPhonemeIds(phonemes: string[], modelConfig: ModelConfig): number[] {
 function makeAudioPlayer(sampleRate: number, numChannels: number) {
   const audioCtx = new window.AudioContext({sampleRate})
   return {
-    play(pcmData: Float32Array) {
+    play(pcmData: Float32Array, appendSilenceSeconds: number) {
+      const {buffer, peak} = makeAudioBuffer(pcmData, appendSilenceSeconds)
       const source = audioCtx.createBufferSource()
-      source.buffer = makeAudioBuffer(pcmData)
-      source.connect(audioCtx.destination)
+      source.buffer = buffer
+      const gainNode = audioCtx.createGain()
+      gainNode.gain.value = 1 / Math.max(.01, peak)
+      source.connect(gainNode)
+      gainNode.connect(audioCtx.destination)
       return new Promise(f => {
         source.onended = f
         source.start()
@@ -161,14 +172,19 @@ function makeAudioPlayer(sampleRate: number, numChannels: number) {
       audioCtx.close().catch(console.error)
     }
   }
-  function makeAudioBuffer(pcmData: Float32Array) {
-    const buffer = audioCtx.createBuffer(numChannels, pcmData.length / numChannels, sampleRate)
+  function makeAudioBuffer(pcmData: Float32Array, appendSilenceSeconds: number): {buffer: AudioBuffer, peak: number} {
+    const samplesPerChannel = pcmData.length / numChannels
+    const buffer = audioCtx.createBuffer(numChannels, samplesPerChannel + (appendSilenceSeconds * sampleRate), sampleRate)
+    let peak = 0
     for (let channel = 0; channel < numChannels; channel++) {
       const nowBuffering = buffer.getChannelData(channel)
-      for (let i = 0; i < pcmData.length / numChannels; i++) {
-        nowBuffering[i] = pcmData[i * numChannels + channel]
+      for (let i = 0; i < samplesPerChannel; i++) {
+        const sample = pcmData[i * numChannels + channel]   //assuming interleaved channel data
+        nowBuffering[i] = sample
+        if (sample > peak) peak = sample
+        else if (-sample > peak) peak = -sample
       }
     }
-    return buffer
+    return {buffer, peak}
   }
 }
