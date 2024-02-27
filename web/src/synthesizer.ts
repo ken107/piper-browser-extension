@@ -82,6 +82,7 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
   }
 
   let index = 0
+  const hasNext = () => index +1 < sentences.length
   const sm = makeStateMachine({
     IDLE: {
       start() {
@@ -91,11 +92,15 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
             .catch(err => sm.trigger("onError", err))
           return "SYNTHESIZING"
         }
+        else {
+          finishSubject.complete()
+          return "DONE"
+        }
       }
     },
     SYNTHESIZING: {
       onSynthesized(pcmData: Float32Array) {
-        audioPlayer.play(pcmData, sentenceSilenceSeconds).then(() => sm.trigger("onEnded"))
+        audioPlayer.play(pcmData, hasNext() ? sentenceSilenceSeconds : 0).then(() => sm.trigger("onEnded"))
         return "PLAYING"
       },
       onError(err: unknown) {
@@ -125,7 +130,7 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
       pause() {},
       resume(this: {pcmData?: Float32Array}) {
         if (this.pcmData) {
-          audioPlayer.play(this.pcmData, sentenceSilenceSeconds).then(() => sm.trigger("onEnded"))
+          audioPlayer.play(this.pcmData, hasNext() ? sentenceSilenceSeconds : 0).then(() => sm.trigger("onEnded"))
           return "PLAYING"
         }
         else {
@@ -138,15 +143,19 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
       }
     },
     PLAYING: {
+      onTransitionIn(this: {prefetch: Promise<Float32Array>}) {
+        if (hasNext()) this.prefetch = synthesize(sentences[index +1])
+      },
       pause() {
         audioPlayer.pause()
       },
       resume() {
         audioPlayer.resume()
       },
-      onEnded() {
-        if (++index < sentences.length) {
-          synthesize(sentences[index])
+      onEnded(this: {prefetch: Promise<Float32Array>}) {
+        if (hasNext()) {
+          index++
+          this.prefetch
             .then(pcmData => sm.trigger("onSynthesized", pcmData))
             .catch(err => sm.trigger("onError", err))
           return "SYNTHESIZING"
