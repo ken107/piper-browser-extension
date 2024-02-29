@@ -3,6 +3,7 @@ import * as ort from "onnxruntime-web"
 import * as rxjs from "rxjs"
 import config from "./config"
 import { ModelConfig, SpeakOptions, Speech, Synthesizer } from "./types"
+import { immediate } from "./utils"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
@@ -38,12 +39,6 @@ const phonemeIdConfig = {
 
 
 export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
-  switch (modelConfig.phoneme_type ?? defaults.phonemeType) {
-    case "espeak":
-      break
-    default:
-      throw new Error("Unsupported phoneme_type " + modelConfig.phoneme_type)
-  }
   const session = await ort.InferenceSession.create(URL.createObjectURL(model))
   return {
     isBusy: false,
@@ -54,7 +49,7 @@ export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): 
 }
 
 
-async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {utterance, pitch, rate, volume}: SpeakOptions): Promise<Speech> {
+async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {speakerId, utterance, pitch, rate, volume}: SpeakOptions): Promise<Speech> {
   const sampleRate = modelConfig.audio?.sample_rate ?? defaults.sampleRate
   const numChannels = defaults.channels
   const noiseScale = modelConfig.inference?.noise_scale ?? defaults.noiseScale
@@ -72,11 +67,13 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
     //TODO: handle phoneme_silence
     const phonemeIds = toPhonemeIds(phonemes, modelConfig)
     const start = Date.now()
-    const {output} = await session.run({
+    const feeds: Record<string, ort.Tensor> = {
       input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
       input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
       scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
-    })
+    }
+    if (speakerId != undefined) feeds.sid = new ort.Tensor('int64', [speakerId])
+    const {output} = await session.run(feeds)
     console.debug("Synthesized in", Date.now()-start, "ms", phonemes, phonemeIds)
     return output.data as Float32Array
   }
@@ -199,14 +196,23 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {u
 
 
 async function phonemize(text: string, modelConfig: ModelConfig): Promise<string[][]> {
-  if (!modelConfig.espeak?.voice) throw new Error("Missing modelConfig.espeak.voice")
+  const phonemeType = (modelConfig.phoneme_type ?? defaults.phonemeType) == "text" ? "text" : "espeak"
   const res = await fetch(config.serviceUrl + "/phonemizer?capabilities=phonemize-1.0", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
       method: "phonemize",
+      type: phonemeType,
       text,
-      lang: modelConfig.espeak.voice
+      lang: immediate(() => {
+        if (phonemeType == "espeak") {
+          if (!modelConfig.espeak?.voice) throw new Error("Missing modelConfig.espeak.voice")
+          return modelConfig.espeak.voice
+        }
+        else {
+          return "ignore"
+        }
+      })
     })
   })
   if (!res.ok) throw new Error("Server return " + res.status)

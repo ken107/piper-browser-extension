@@ -1,7 +1,7 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, messageDispatcher, sampler, speechManager } from "./services"
+import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, speechManager } from "./services"
 import { createSynthesizer } from "./synthesizer"
 import { MyVoice, Synthesizer } from "./types"
 import { immediate } from "./utils"
@@ -11,15 +11,16 @@ ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 function App() {
   const [state, stateUpdater] = useImmer({
-    voiceList: [] as MyVoice[],
+    voiceList: null as MyVoice[]|null,
     activityLog: "Ready",
     synthesizers: {} as Record<string, Synthesizer|undefined>
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!)
   }
-  const installed = state.voiceList.filter(x => x.installState == "installed")
-  const notInstalled = state.voiceList.filter(x => x.installState != "installed")
+  const installed = React.useMemo(() => state.voiceList?.filter(x => x.installState == "installed") ?? [], [state.voiceList])
+  const notInstalled = React.useMemo(() => state.voiceList?.filter(x => x.installState != "installed") ?? [], [state.voiceList])
+  const advertised = React.useMemo(() => makeAdvertisedVoiceList(state.voiceList), [state.voiceList])
 
 
   //startup
@@ -34,9 +35,9 @@ function App() {
 
   //advertise voices
   React.useEffect(() => {
-    if (state.voiceList.length) advertiseVoices(installed.length ? installed : notInstalled)
+    if (advertised) advertiseVoices(advertised)
   }, [
-    state.voiceList
+    advertised
   ])
 
   //handle requests
@@ -60,10 +61,24 @@ function App() {
 
   return (
     <div className="container">
+      {location.hostname == "localhost" &&
+        <React.Fragment>
+          <h2 className="text-muted">Test</h2>
+          <form onSubmit={onSubmitTest}>
+            <textarea className="form-control" rows={3} name="text" defaultValue="It is a period of civil war. Rebel spaceships, striking from a hidden base, have won their first victory against the evil Galactic Empire. During the battle, Rebel spies managed to steal secret plans to the Empire's ultimate weapon, the DEATH STAR, an armored space station with enough power to destroy an entire planet. Pursued by the Empire's sinister agents, Princess Leia races home aboard her starship, custodian of the stolen plans that can save her people and restore freedom to the galaxy..." />
+            <select className="form-control mt-3" name="voice">
+              <option value=""></option>
+              {advertised?.map(voice =>
+                <option key={voice.voiceName} value={voice.voiceName}>{voice.voiceName}</option>
+              )}
+            </select>
+            <button type="submit" className="btn btn-primary mt-3">Speak</button>
+          </form>
+        </React.Fragment>
+      }
+
       <h2 className="text-muted">Activity Log</h2>
       <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={state.activityLog} />
-      <button type="button" className="btn btn-primary"
-        onClick={test}>Test</button>
 
       <h2 className="text-muted">Installed Voices ({installed.length})</h2>
       {installed.length == 0 &&
@@ -88,7 +103,7 @@ function App() {
                   <span className="me-1">[{voice.quality}]</span>
                   <span className="link" onClick={() => sampler.play(voice)}>sample</span>
                 </td>
-                <td>{voice.languageName} ({voice.languageCountry})</td>
+                <td>{voice.language.name_native} ({voice.language.country_english})</td>
                 <td>({getStatusText(voice)})</td>
                 <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="text-end ps-2">
@@ -120,7 +135,7 @@ function App() {
                   <span className="me-1">[{voice.quality}]</span>
                   <span className="link" onClick={() => sampler.play(voice)}>sample</span>
                 </td>
-                <td>{voice.languageName} ({voice.languageCountry})</td>
+                <td>{voice.language.name_native} ({voice.language.country_english})</td>
                 <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="text-end ps-2">
                   <InstallButton voice={voice} onInstall={onInstall} />
@@ -150,12 +165,12 @@ function App() {
   async function onInstall(voice: MyVoice, onProgress: (percent: number) => void) {
     try {
       stateUpdater(draft => {
-        draft.voiceList.find(x => x.key == voice.key)!.installState = "installing"
+        draft.voiceList!.find(x => x.key == voice.key)!.installState = "installing"
       })
       const {model, modelConfig} = await installVoice(voice, onProgress)
       const synth = await createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
-        draft.voiceList.find(x => x.key == voice.key)!.installState = "installed"
+        draft.voiceList!.find(x => x.key == voice.key)!.installState = "installed"
         draft.synthesizers[voice.key] = synth
       })
     }
@@ -168,7 +183,7 @@ function App() {
     try {
       await deleteVoice(voice)
       stateUpdater(draft => {
-        draft.voiceList.find(x => x.key == voice.key)!.installState = "not-installed"
+        draft.voiceList!.find(x => x.key == voice.key)!.installState = "not-installed"
       })
     }
     catch (err) {
@@ -197,28 +212,36 @@ function App() {
     )) {
       throw new Error("Bad args")
     }
-    const voiceKey = voiceName.split(" ")[1]
-    let synth = state.synthesizers[voiceKey]
+    const {modelId, speakerName} = parseAdvertisedVoiceName(voiceName)
+    const voice = state.voiceList!.find(({key}) => key.endsWith('-' + modelId))
+    if (!voice) throw new Error("Voice not found")
+    const speakerId = immediate(() => {
+      if (speakerName) {
+        if (!(speakerName in voice.speaker_id_map)) throw new Error("Speaker name not found")
+        return voice.speaker_id_map[speakerName]
+      }
+    })
+    let synth = state.synthesizers[voice.key]
     if (!synth) {
-      const {model, modelConfig} = await getInstalledVoice(voiceKey)
+      const {model, modelConfig} = await getInstalledVoice(voice.key)
       synth = await createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
-        draft.synthesizers[voiceKey] = synth
+        draft.synthesizers[voice.key] = synth
       })
     }
     stateUpdater(draft => {
-      const draftSynth = draft.synthesizers[voiceKey]
+      const draftSynth = draft.synthesizers[voice.key]
       if (draftSynth) draftSynth.isBusy = true
     })
     try {
-      const speech = await synth.speak({utterance, pitch, rate, volume})
+      const speech = await synth.speak({speakerId, utterance, pitch, rate, volume})
       return {
         speechId: speechManager.add(speech)
       }
     }
     finally {
       stateUpdater(draft => {
-        const draftSynth = draft.synthesizers[voiceKey]
+        const draftSynth = draft.synthesizers[voice.key]
         if (draftSynth) draftSynth.isBusy = false
       })
     }
@@ -244,11 +267,15 @@ function App() {
     await speechManager.get(speechId)?.stop()
   }
 
-  function test() {
-    onSpeak({
-      utterance: `Over the past few months, the WebKit Web Audio API has emerged as a compelling platform for games and audio applications on the web. As developers familiarize themselves with it, I hear similar questions creep up repeatedly. This quick update is an attempt to address some of the more frequently asked questions to make your experience with the Web Audio API more pleasant.`,
-      voiceName: "Piper en_GB-southern_english_female-low (English)"
-    })
+  function onSubmitTest(event: React.FormEvent) {
+    event.preventDefault()
+    const form = event.target as any
+    if (form.text.value && form.voice.value) {
+      onSpeak({
+        utterance: form.text.value,
+        voiceName: form.voice.value
+      })
+    }
   }
 }
 

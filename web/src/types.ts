@@ -20,16 +20,16 @@ export interface PiperVoice {
   readonly aliases: string[]
 }
 
-export interface MyVoice {
-  readonly key: string
-  readonly name: string
-  readonly languageCode: string
-  readonly languageName: string
-  readonly languageCountry: string
-  readonly quality: string
+export interface MyVoice extends PiperVoice {
   readonly modelFile: string
   readonly modelFileSize: number
   readonly installState: InstallState
+}
+
+export interface AdvertisedVoice {
+  readonly voiceName: string
+  readonly lang: string
+  readonly eventTypes: string[]
 }
 
 export type InstallState = "not-installed"|"installing"|"installed"
@@ -52,12 +52,13 @@ export interface ModelConfig {
     noise_w?: number
     phoneme_silence?: Record<string, number>
   }
-  phoneme_type?: "espeak"|"text"
+  phoneme_type?: string
   phoneme_map?: Record<string, string[]>
   phoneme_id_map?: Record<string, number[]>
 }
 
 export interface SpeakOptions {
+  speakerId?: number,
   utterance: string,
   pitch?: number,
   rate?: number,

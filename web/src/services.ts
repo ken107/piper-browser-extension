@@ -1,7 +1,7 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { InstallState, ModelConfig, MyVoice, PiperVoice, Speech } from "./types"
+import { AdvertisedVoice, InstallState, ModelConfig, MyVoice, PiperVoice, Speech } from "./types"
 import { fetchWithProgress, immediate } from "./utils"
 
 
@@ -13,12 +13,7 @@ export async function getVoiceList(): Promise<MyVoice[]> {
       const modelFile = Object.keys(voice.files).find(x => x.endsWith(".onnx"))
       if (!modelFile) throw new Error("Can't identify model file for " + voice.name)
       return {
-        key: voice.key,
-        name: voice.name,
-        languageCode: voice.language.family.toLowerCase() + "-" + voice.language.region.toUpperCase(),
-        languageName: voice.language.name_native,
-        languageCountry: voice.language.country_english,
-        quality: voice.quality,
+        ...voice,
         modelFile,
         modelFileSize: voice.files[modelFile].size_bytes,
         installState: "not-installed" as InstallState,
@@ -63,21 +58,52 @@ export async function deleteVoice(voice: MyVoice) {
 }
 
 
-export function advertiseVoices(voices: MyVoice[]) {
+export function advertiseVoices(voices: AdvertisedVoice[]) {
   top?.postMessage(<Message>{
     type: "notification",
     to: "piper-host",
     method: "advertiseVoices",
-    args: {
-      voices: voices
-        .map(voice => ({
-          voiceName: "Piper " + voice.key + " (" + voice.languageName + ")",
-          lang: voice.languageCode,
-          eventTypes: ["start", "end", "error"]
-        }))
-        .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
-    }
+    args: {voices}
   }, "*")
+}
+
+
+export function makeAdvertisedVoiceList(voiceList: MyVoice[]|null): AdvertisedVoice[]|null {
+  if (voiceList == null) return null
+  const installed = voiceList.filter(x => x.installState == "installed")
+  const advertised = installed.length ? installed : voiceList
+  return advertised
+    .flatMap<AdvertisedVoice>(voice => {
+      const modelId = voice.key.split("-").slice(1).join("-")
+      const lang = voice.language.code.replace(/_/g, "-")
+      const eventTypes = ["start", "end", "error"]
+      const speakerNames = voice.speaker_id_map ? Object.keys(voice.speaker_id_map) : []
+      if (speakerNames.length) {
+        return speakerNames
+          .map<AdvertisedVoice>(speakerName => ({
+            voiceName: `Piper ${modelId} ${speakerName} (${voice.language.name_native})`,
+            lang,
+            eventTypes
+          }))
+      }
+      else {
+        return {
+          voiceName: `Piper ${modelId} (${voice.language.name_native})`,
+          lang,
+          eventTypes
+        }
+      }
+    })
+    .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
+}
+
+
+export function parseAdvertisedVoiceName(name: string): {modelId: string, speakerName?: string} {
+  const [piper, modelId, speakerName] = name.split(" ")
+  return {
+    modelId,
+    speakerName: speakerName.startsWith("(") ? undefined : speakerName
+  }
 }
 
 
