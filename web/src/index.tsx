@@ -1,7 +1,7 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, speechManager } from "./services"
+import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, speechManager, speechCache } from "./services"
 import { createSynthesizer } from "./synthesizer"
 import { MyVoice, Synthesizer } from "./types"
 import { immediate } from "./utils"
@@ -32,8 +32,7 @@ function App() {
         draft.voiceList = voiceList
       }))
       .catch(handleError)
-  }, [
-  ])
+  }, [])
 
   //advertise voices
   React.useEffect(() => {
@@ -236,13 +235,14 @@ function App() {
     }
   }
 
-  async function onSpeak({utterance, voiceName, pitch, rate, volume}: Record<string, unknown>) {
+  async function onSpeak({utterance, voiceName, pitch, rate, volume, prefetch}: Record<string, unknown>) {
     if (!(
       typeof utterance == "string" &&
       typeof voiceName == "string" &&
       (typeof pitch == "number" || typeof pitch == "undefined") &&
       (typeof rate == "number" || typeof rate == "undefined") &&
-      (typeof volume == "number" || typeof volume == "undefined")
+      (typeof volume == "number" || typeof volume == "undefined") &&
+      (typeof prefetch == "boolean" || typeof prefetch == "undefined")
     )) {
       throw new Error("Bad args")
     }
@@ -255,7 +255,7 @@ function App() {
         return voice.speaker_id_map[speakerName]
       }
     })
-    appendActivityLog(`Synthesizing '${utterance.slice(0,50)}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
+    appendActivityLog(`Synthesizing '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
     let synth = state.synthesizers[voice.key]
     if (!synth) {
       const {model, modelConfig} = await getInstalledVoice(voice.key)
@@ -269,9 +269,18 @@ function App() {
       if (draftSynth) draftSynth.isBusy = true
     })
     try {
-      const speech = await synth.speak({speakerId, utterance, pitch, rate, volume})
-      return {
-        speechId: speechManager.add(speech)
+      if (prefetch) {
+        speechCache.add(utterance, synth.makeSpeech({speakerId, utterance, pitch, rate, volume}), 5*60*1000)
+        return {
+          speechId: "dummy"
+        }
+      }
+      else {
+        const speech = await (speechCache.remove(utterance) || synth.makeSpeech({speakerId, utterance, pitch, rate, volume}))
+        speech.play()
+        return {
+          speechId: speechManager.add(speech)
+        }
       }
     }
     finally {
@@ -284,22 +293,22 @@ function App() {
 
   async function onWait({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
-    await speechManager.get(speechId)?.wait()
+    await speechManager.get(speechId)?.finishPromise
   }
 
-  async function onPause({speechId}: Record<string, unknown>) {
+  function onPause({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
-    await speechManager.get(speechId)?.pause()
+    speechManager.get(speechId)?.pause()
   }
 
-  async function onResume({speechId}: Record<string, unknown>) {
+  function onResume({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
-    await speechManager.get(speechId)?.resume()
+    speechManager.get(speechId)?.play()
   }
 
-  async function onStop({speechId}: Record<string, unknown>) {
+  function onStop({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
-    await speechManager.get(speechId)?.stop()
+    speechManager.get(speechId)?.stop()
   }
 
   function onSubmitTest(event: React.FormEvent) {

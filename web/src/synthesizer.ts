@@ -42,14 +42,14 @@ export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): 
   const session = await ort.InferenceSession.create(URL.createObjectURL(model))
   return {
     isBusy: false,
-    speak(opts) {
-      return speak(session, modelConfig, opts)
+    makeSpeech(opts) {
+      return makeSpeech(session, modelConfig, opts)
     }
   }
 }
 
 
-async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {speakerId, utterance, pitch, rate, volume}: SpeakOptions): Promise<Speech> {
+async function makeSpeech(session: ort.InferenceSession, modelConfig: ModelConfig, {speakerId, utterance, pitch, rate, volume}: SpeakOptions): Promise<Speech> {
   const sampleRate = modelConfig.audio?.sample_rate ?? defaults.sampleRate
   const numChannels = defaults.channels
   const noiseScale = modelConfig.inference?.noise_scale ?? defaults.noiseScale
@@ -59,6 +59,8 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {s
 
   const sentences = await phonemize(utterance, modelConfig)
   const audioPlayer = makeAudioPlayer(sampleRate, numChannels)
+  const readySubject = new rxjs.Subject<void>()
+  const readyPromise = rxjs.firstValueFrom(readySubject, {defaultValue: undefined as void})
   const finishSubject = new rxjs.Subject<void>()
   const finishPromise = rxjs.firstValueFrom(finishSubject, {defaultValue: undefined as void})
   finishPromise.finally(() => audioPlayer.close())
@@ -82,14 +84,20 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {s
   const hasNext = () => index +1 < sentences.length
   const sm = makeStateMachine({
     IDLE: {
-      start() {
+      load() {
         if (index < sentences.length) {
           synthesize(sentences[index])
-            .then(pcmData => sm.trigger("onSynthesized", pcmData))
-            .catch(err => sm.trigger("onError", err))
-          return "SYNTHESIZING"
+            .then(pcmData => {
+              readySubject.complete()
+              sm.trigger("onSynthesized", pcmData)
+            }, err => {
+              readySubject.error(err)
+              sm.trigger("onError", err)
+            })
+          return "SYNTHESIZING_PAUSED"
         }
         else {
+          readySubject.complete()
           finishSubject.complete()
           return "DONE"
         }
@@ -153,8 +161,10 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {s
         if (hasNext()) {
           index++
           this.prefetch
-            .then(pcmData => sm.trigger("onSynthesized", pcmData))
-            .catch(err => sm.trigger("onError", err))
+            .then(
+              pcmData => sm.trigger("onSynthesized", pcmData),
+              err => sm.trigger("onError", err)
+            )
           return "SYNTHESIZING"
         }
         else {
@@ -177,20 +187,20 @@ async function speak(session: ort.InferenceSession, modelConfig: ModelConfig, {s
     }
   })
 
-  sm.trigger("start")
+  sm.trigger("load")
+  await readyPromise
+
   return {
-    async pause() {
-      sm.trigger("pause")
-    },
-    async resume() {
+    play() {
       sm.trigger("resume")
     },
-    async stop() {
+    pause() {
+      sm.trigger("pause")
+    },
+    stop() {
       sm.trigger("stop")
     },
-    wait() {
-      return finishPromise
-    }
+    finishPromise
   }
 }
 

@@ -150,11 +150,31 @@ export const speechManager = immediate(() => {
     add(speech: Speech) {
       const id = String(Math.random())
       speeches.set(id, speech)
-      speech.wait().finally(() => speeches.delete(id))
+      speech.finishPromise.finally(() => speeches.delete(id))
       return id
     },
     get(id: string) {
       return speeches.get(id)
+    }
+  }
+})
+
+
+export const speechCache = immediate(() => {
+  const cache = new Map<string, {promise: Promise<Speech>, timer: ReturnType<typeof setTimeout>}>()
+  return {
+    add(key: string, promise: Promise<Speech>, ttl: number) {
+      cache.set(key, {
+        promise,
+        timer: setTimeout(() => cache.delete(key), ttl)
+      })
+    },
+    remove(key: string) {
+      const entry = cache.get(key)
+      if (entry) {
+        clearTimeout(entry.timer)
+        return entry.promise
+      }
     }
   }
 })

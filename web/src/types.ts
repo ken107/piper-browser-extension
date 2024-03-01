@@ -36,7 +36,7 @@ export type InstallState = "not-installed"|"installing"|"installed"
 
 export interface Synthesizer {
   readonly isBusy: boolean
-  speak(opts: SpeakOptions): Promise<Speech>
+  makeSpeech(opts: SpeakOptions): Promise<Speech>
 }
 
 export interface ModelConfig {
@@ -66,8 +66,8 @@ export interface SpeakOptions {
 }
 
 export interface Speech {
-  pause(): Promise<void>
-  resume(): Promise<void>
-  stop(): Promise<void>
-  wait(): Promise<void>
+  play(): void
+  pause(): void
+  stop(): void
+  finishPromise: Promise<void>
 }
