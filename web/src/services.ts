@@ -9,6 +9,7 @@ export async function getVoiceList(): Promise<MyVoice[]> {
   const blob = await getFile("voices.json", () => piperFetch("voices.json"))
   const voicesJson: Record<string, PiperVoice> = await blob.text().then(JSON.parse)
   const voiceList = Object.values(voicesJson)
+    .filter(voice => !config.excludeVoices.has(voice.key))
     .map(voice => {
       const modelFile = Object.keys(voice.files).find(x => x.endsWith(".onnx"))
       if (!modelFile) throw new Error("Can't identify model file for " + voice.name)

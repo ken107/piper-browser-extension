@@ -12,12 +12,13 @@ ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 function App() {
   const [state, stateUpdater] = useImmer({
     voiceList: null as MyVoice[]|null,
-    activityLog: "Ready",
+    activityLog: "",
     synthesizers: {} as Record<string, Synthesizer|undefined>,
     isExpanded: {} as Record<string, boolean>,
   })
   const refs = {
-    activityLog: React.useRef<HTMLTextAreaElement>(null!)
+    activityLog: React.useRef<HTMLTextAreaElement>(null!),
+    testSpeech: React.useRef<{speechId: string}>(),
   }
   const installed = React.useMemo(() => state.voiceList?.filter(x => x.installState == "installed") ?? [], [state.voiceList])
   const notInstalled = React.useMemo(() => state.voiceList?.filter(x => x.installState != "installed") ?? [], [state.voiceList])
@@ -121,7 +122,12 @@ function App() {
                   }
                 </td>
                 <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
-                <td className="align-top">({getStatusText(voice)})</td>
+                <td className="align-top">
+                  {voice.key in state.synthesizers
+                    ? (state.synthesizers[voice.key]!.isBusy ? "(in use)" : "(in memory)")
+                    : "(on disk)"
+                  }
+                </td>
                 <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="align-top text-end ps-2">
                   <button type="button" className="btn btn-danger btn-sm"
@@ -191,7 +197,7 @@ function App() {
 
   function appendActivityLog(text: string) {
     stateUpdater(draft => {
-      draft.activityLog += "\n" + text
+      draft.activityLog += text + '\n'
     })
   }
 
@@ -229,17 +235,6 @@ function App() {
       handleError(err)
     }
   }
-  
-  function getStatusText(voice: MyVoice) {
-    const synth = state.synthesizers[voice.key]
-    if (synth) {
-      if (synth.isBusy) return "in use"
-      else return "in memory"
-    }
-    else {
-      return "on disk"
-    }
-  }
 
   async function onSpeak({utterance, voiceName, pitch, rate, volume}: Record<string, unknown>) {
     if (!(
@@ -260,6 +255,7 @@ function App() {
         return voice.speaker_id_map[speakerName]
       }
     })
+    appendActivityLog(`Synthesizing '${utterance.slice(0,50)}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
     let synth = state.synthesizers[voice.key]
     if (!synth) {
       const {model, modelConfig} = await getInstalledVoice(voice.key)
@@ -310,10 +306,10 @@ function App() {
     event.preventDefault()
     const form = event.target as any
     if (form.text.value && form.voice.value) {
-      onSpeak({
-        utterance: form.text.value,
-        voiceName: form.voice.value
-      })
+      if (refs.testSpeech.current) onStop(refs.testSpeech.current)
+      onSpeak({utterance: form.text.value, voiceName: form.voice.value})
+        .then(speech => refs.testSpeech.current = speech)
+        .catch(handleError)
     }
   }
 }
