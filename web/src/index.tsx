@@ -13,7 +13,8 @@ function App() {
   const [state, stateUpdater] = useImmer({
     voiceList: null as MyVoice[]|null,
     activityLog: "Ready",
-    synthesizers: {} as Record<string, Synthesizer|undefined>
+    synthesizers: {} as Record<string, Synthesizer|undefined>,
+    isExpanded: {} as Record<string, boolean>,
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!)
@@ -80,7 +81,7 @@ function App() {
       <h2 className="text-muted">Activity Log</h2>
       <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={state.activityLog} />
 
-      <h2 className="text-muted">Installed Voices ({installed.length})</h2>
+      <h2 className="text-muted">Installed</h2>
       {installed.length == 0 &&
         <div className="text-muted">Installed voices will appear here</div>
       }
@@ -88,7 +89,7 @@ function App() {
         <table className="table table-borderless table-hover table-sm">
           <thead>
             <tr>
-              <th>Voice</th>
+              <th>Voice Pack</th>
               <th>Language</th>
               <th>Status</th>
               <th></th>
@@ -101,12 +102,28 @@ function App() {
                 <td>
                   <span className="me-1">{voice.name}</span>
                   <span className="me-1">[{voice.quality}]</span>
-                  <span className="link" onClick={() => sampler.play(voice)}>sample</span>
+                  {voice.num_speakers <= 1 &&
+                    <span className="link" onClick={() => sampler.play(voice)}>sample</span>
+                  }
+                  {voice.num_speakers > 1 &&
+                    <span style={{cursor: "pointer"}}
+                      onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
+                  }
+                  {state.isExpanded[voice.key] &&
+                    <ul>
+                      {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
+                        <li key={speakerId}>
+                          <span className="me-1">{speakerName}</span>
+                          <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
+                        </li>
+                      )}
+                    </ul>
+                  }
                 </td>
-                <td>{voice.language.name_native} ({voice.language.country_english})</td>
-                <td>({getStatusText(voice)})</td>
-                <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                <td className="text-end ps-2">
+                <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
+                <td className="align-top">({getStatusText(voice)})</td>
+                <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
+                <td className="align-top text-end ps-2">
                   <button type="button" className="btn btn-danger btn-sm"
                     onClick={() => onDelete(voice)}>Delete</button>
                 </td>
@@ -116,12 +133,12 @@ function App() {
         </table>
       }
 
-      <h2 className="text-muted">Available to Install ({notInstalled.length})</h2>
+      <h2 className="text-muted">Available to Install</h2>
       {notInstalled.length > 0 &&
         <table className="table table-borderless table-hover table-sm">
           <thead>
             <tr>
-              <th>Voice</th>
+              <th>Voice Pack</th>
               <th>Language</th>
               <th></th>
               <th style={{width: "0%"}}></th>
@@ -133,11 +150,27 @@ function App() {
                 <td>
                   <span className="me-1">{voice.name}</span>
                   <span className="me-1">[{voice.quality}]</span>
-                  <span className="link" onClick={() => sampler.play(voice)}>sample</span>
+                  {voice.num_speakers <= 1 &&
+                    <span className="link" onClick={() => sampler.play(voice)}>sample</span>
+                  }
+                  {voice.num_speakers > 1 &&
+                    <span style={{cursor: "pointer"}}
+                      onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
+                  }
+                  {state.isExpanded[voice.key] &&
+                    <ul>
+                      {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
+                        <li key={speakerId}>
+                          <span className="me-1">{speakerName}</span>
+                          <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
+                        </li>
+                      )}
+                    </ul>
+                  }
                 </td>
-                <td>{voice.language.name_native} ({voice.language.country_english})</td>
-                <td className="text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                <td className="text-end ps-2">
+                <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
+                <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
+                <td className="align-top text-end ps-2">
                   <InstallButton voice={voice} onInstall={onInstall} />
                 </td>
               </tr>
@@ -159,6 +192,12 @@ function App() {
   function appendActivityLog(text: string) {
     stateUpdater(draft => {
       draft.activityLog += "\n" + text
+    })
+  }
+
+  function toggleExpanded(voiceKey: string) {
+    stateUpdater(draft => {
+      draft.isExpanded[voiceKey] = !draft.isExpanded[voiceKey]
     })
   }
 

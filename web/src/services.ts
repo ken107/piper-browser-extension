@@ -112,10 +112,10 @@ export const sampler = immediate(() => {
   audio.crossOrigin = "anonymous"
   audio.autoplay = true
   return {
-    play(voice: MyVoice) {
+    play(voice: MyVoice, speakerId?: number) {
       const tokens = voice.modelFile.split("/")
       tokens.pop()
-      audio.src = config.repoUrl + tokens.join("/") + "/samples/speaker_0.mp3"
+      audio.src = config.repoUrl + tokens.join("/") + "/samples/speaker_" + (speakerId ?? 0) + ".mp3"
     },
     stop() {
       audio.pause()
