@@ -276,8 +276,9 @@ function App() {
         }
       }
       else {
-        const speech = await (speechCache.remove(utterance) || synth.makeSpeech({speakerId, utterance, pitch, rate, volume}))
-        speech.play()
+        const speech = speechCache.remove(utterance) || synth.makeSpeech({speakerId, utterance, pitch, rate, volume})
+        await speech.readyPromise
+        speech.control.next("play")
         return {
           speechId: speechManager.add(speech)
         }
@@ -298,17 +299,17 @@ function App() {
 
   function onPause({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
-    speechManager.get(speechId)?.pause()
+    speechManager.get(speechId)?.control.next("pause")
   }
 
   function onResume({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
-    speechManager.get(speechId)?.play()
+    speechManager.get(speechId)?.control.next("play")
   }
 
   function onStop({speechId}: Record<string, unknown>) {
     if (typeof speechId != "string") throw new Error("Bad args")
-    speechManager.get(speechId)?.stop()
+    speechManager.get(speechId)?.control.next("stop")
   }
 
   function onSubmitTest(event: React.FormEvent) {

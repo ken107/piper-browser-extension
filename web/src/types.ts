@@ -1,3 +1,4 @@
+import * as rxjs from "rxjs"
 
 export interface PiperVoice {
   readonly key: string
@@ -36,7 +37,7 @@ export type InstallState = "not-installed"|"installing"|"installed"
 
 export interface Synthesizer {
   readonly isBusy: boolean
-  makeSpeech(opts: SpeakOptions): Promise<Speech>
+  makeSpeech(opts: SpeakOptions): Speech
 }
 
 export interface ModelConfig {
@@ -66,8 +67,13 @@ export interface SpeakOptions {
 }
 
 export interface Speech {
-  play(): void
-  pause(): void
-  stop(): void
+  control: rxjs.Subject<"play"|"pause"|"stop">
+  readyPromise: Promise<void>
   finishPromise: Promise<void>
+}
+
+export interface PcmData {
+  samples: Float32Array
+  sampleRate: number
+  numChannels: number
 }

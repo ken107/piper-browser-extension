@@ -41,7 +41,6 @@
   },
   "dependencies": {
     "@lsdsoftware/message-dispatcher": "^1.0.3",
-    "@lsdsoftware/state-machine": "^1.2.0",
     "onnxruntime-web": "^1.17.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
