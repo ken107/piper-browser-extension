@@ -1,9 +1,9 @@
 const path = require('path')
 const CopyPlugin = require('copy-webpack-plugin')
 
-module.exports = env => ({
+module.exports = (env, argv) => ({
   entry: './src/index.tsx',
-  devtool: 'source-map',
+  devtool: argv.mode == 'production' ? undefined : 'source-map',
   module: {
     rules: [
       {
@@ -17,7 +17,7 @@ module.exports = env => ({
     extensions: ['.tsx', '.ts', '.js'],
   },
   output: {
-    path: path.resolve(__dirname, 'build', env.production ? 'release' : 'debug'),
+    path: path.resolve(__dirname, 'build', argv.mode == 'production' ? 'release' : 'debug'),
     filename: 'bundle.js',
   },
   plugins: [

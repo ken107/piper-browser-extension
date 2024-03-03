@@ -73,9 +73,8 @@ export function advertiseVoices(voices: AdvertisedVoice[]) {
 
 export function makeAdvertisedVoiceList(voiceList: MyVoice[]|null): AdvertisedVoice[]|null {
   if (voiceList == null) return null
-  const installed = voiceList.filter(x => x.installState == "installed")
-  const advertised = installed.length ? installed : voiceList
-  return advertised
+  return voiceList
+    .filter(x => x.installState == "installed")
     .flatMap<AdvertisedVoice>(voice => {
       const modelId = voice.key.split("-").slice(1).join("-")
       const lang = voice.language.code.replace(/_/g, "-")

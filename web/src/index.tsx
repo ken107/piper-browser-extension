@@ -61,7 +61,7 @@ function App() {
 
   return (
     <div className="container">
-      {location.hostname == "localhost" &&
+      {top == self &&
         <>
           <h2 className="text-muted">Test</h2>
           <form onSubmit={onSubmitTest}>
