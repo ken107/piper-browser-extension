@@ -1,7 +1,7 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { AdvertisedVoice, InstallState, ModelConfig, MyVoice, PiperVoice, Speech } from "./types"
+import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice, Speech, Synthesizer } from "./types"
 import { fetchWithProgress, immediate } from "./utils"
 
 
@@ -18,6 +18,8 @@ export async function getVoiceList(): Promise<MyVoice[]> {
         modelFile,
         modelFileSize: voice.files[modelFile].size_bytes,
         installState: "not-installed" as InstallState,
+        loadState: "not-loaded" as LoadState,
+        numActiveUsers: 0,
       }
     })
   for (const voice of voiceList) {
@@ -178,3 +180,6 @@ export const speechCache = immediate(() => {
     }
   }
 })
+
+
+export const synthesizers = new Map<string, Synthesizer>()

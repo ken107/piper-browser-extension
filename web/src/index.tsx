@@ -1,9 +1,9 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, speechManager, speechCache } from "./services"
-import { createSynthesizer } from "./synthesizer"
-import { MyVoice, Synthesizer } from "./types"
+import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, speechCache, speechManager, synthesizers } from "./services"
+import { makeSynthesizer } from "./synthesizer"
+import { MyVoice } from "./types"
 import { immediate } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
@@ -13,7 +13,6 @@ function App() {
   const [state, stateUpdater] = useImmer({
     voiceList: null as MyVoice[]|null,
     activityLog: "",
-    synthesizers: {} as Record<string, Synthesizer|undefined>,
     isExpanded: {} as Record<string, boolean>,
   })
   const refs = {
@@ -63,7 +62,7 @@ function App() {
   return (
     <div className="container">
       {location.hostname == "localhost" &&
-        <React.Fragment>
+        <>
           <h2 className="text-muted">Test</h2>
           <form onSubmit={onSubmitTest}>
             <textarea className="form-control" rows={3} name="text" defaultValue="It is a period of civil war. Rebel spaceships, striking from a hidden base, have won their first victory against the evil Galactic Empire. During the battle, Rebel spies managed to steal secret plans to the Empire's ultimate weapon, the DEATH STAR, an armored space station with enough power to destroy an entire planet. Pursued by the Empire's sinister agents, Princess Leia races home aboard her starship, custodian of the stolen plans that can save her people and restore freedom to the galaxy..." />
@@ -75,7 +74,7 @@ function App() {
             </select>
             <button type="submit" className="btn btn-primary mt-3">Speak</button>
           </form>
-        </React.Fragment>
+        </>
       }
 
       <h2 className="text-muted">Activity Log</h2>
@@ -122,10 +121,14 @@ function App() {
                 </td>
                 <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
                 <td className="align-top">
-                  {voice.key in state.synthesizers
-                    ? (state.synthesizers[voice.key]!.isBusy ? "(in use)" : "(in memory)")
-                    : "(on disk)"
-                  }
+                  {immediate(() => {
+                    if (voice.numActiveUsers) return <span style={{fontWeight: "bold"}}>(in use)</span>
+                    switch (voice.loadState) {
+                      case "not-loaded": return "(on disk)"
+                      case "loading": return <span style={{fontWeight: "bold", color: "red"}}>(loading)</span>
+                      case "loaded": return "(in memory)"
+                    }
+                  })}
                 </td>
                 <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="align-top text-end ps-2">
@@ -212,10 +215,8 @@ function App() {
         draft.voiceList!.find(x => x.key == voice.key)!.installState = "installing"
       })
       const {model, modelConfig} = await installVoice(voice, onProgress)
-      const synth = await createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
         draft.voiceList!.find(x => x.key == voice.key)!.installState = "installed"
-        draft.synthesizers[voice.key] = synth
       })
     }
     catch (err) {
@@ -225,9 +226,12 @@ function App() {
 
   async function onDelete(voice: MyVoice) {
     try {
+      synthesizers.delete(voice.key)
       await deleteVoice(voice)
       stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.installState = "not-installed"
+        const voiceDraft = draft.voiceList!.find(x => x.key == voice.key)!
+        voiceDraft.loadState = "not-loaded"
+        voiceDraft.installState = "not-installed"
       })
     }
     catch (err) {
@@ -256,39 +260,37 @@ function App() {
       }
     })
     appendActivityLog(`Synthesizing '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
-    let synth = state.synthesizers[voice.key]
+    let synth = synthesizers.get(voice.key)
     if (!synth) {
-      const {model, modelConfig} = await getInstalledVoice(voice.key)
-      synth = await createSynthesizer(model, modelConfig)
       stateUpdater(draft => {
-        draft.synthesizers[voice.key] = synth
+        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
+      })
+      const {model, modelConfig} = await getInstalledVoice(voice.key)
+      synthesizers.set(voice.key, synth = await makeSynthesizer(model, modelConfig))
+      stateUpdater(draft => {
+        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
       })
     }
     stateUpdater(draft => {
-      const draftSynth = draft.synthesizers[voice.key]
-      if (draftSynth) draftSynth.isBusy = true
+      draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
     })
-    try {
-      if (prefetch) {
-        speechCache.add(utterance, synth.makeSpeech({speakerId, utterance, pitch, rate, volume}), 5*60*1000)
-        return {
-          speechId: "dummy"
-        }
-      }
-      else {
-        const speech = speechCache.remove(utterance) || synth.makeSpeech({speakerId, utterance, pitch, rate, volume})
-        await speech.readyPromise
-        speech.control.next("play")
-        return {
-          speechId: speechManager.add(speech)
-        }
+    if (prefetch) {
+      speechCache.add(utterance, synth.makeSpeech({speakerId, utterance, pitch, rate, volume}), 5*60*1000)
+      return {
+        speechId: "dummy"
       }
     }
-    finally {
-      stateUpdater(draft => {
-        const draftSynth = draft.synthesizers[voice.key]
-        if (draftSynth) draftSynth.isBusy = false
-      })
+    else {
+      const speech = speechCache.remove(utterance) || synth.makeSpeech({speakerId, utterance, pitch, rate, volume})
+      await speech.readyPromise
+      speech.control.next("play")
+      speech.finishPromise
+        .then(() => stateUpdater(draft => {
+          draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+        }))
+      return {
+        speechId: speechManager.add(speech)
+      }
     }
   }
 

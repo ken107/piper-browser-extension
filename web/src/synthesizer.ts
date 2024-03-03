@@ -8,7 +8,7 @@ import { ModelConfig, PcmData, SpeakOptions, Speech, Synthesizer } from "./types
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
 
 
-export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
+export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
   const phonemizer = makePhonemizer(modelConfig)
   const engine = await makeInferenceEngine(model, modelConfig)
 
@@ -32,7 +32,6 @@ export async function createSynthesizer(model: Blob, modelConfig: ModelConfig): 
   }
 
   return {
-    isBusy: false,
     makeSpeech(opts): Speech {
       const control = new rxjs.BehaviorSubject<"play"|"pause"|"stop">("pause")
       const canPlaySubject = new rxjs.Subject<void>()

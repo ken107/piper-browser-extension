@@ -25,6 +25,8 @@ export interface MyVoice extends PiperVoice {
   readonly modelFile: string
   readonly modelFileSize: number
   readonly installState: InstallState
+  readonly loadState: LoadState
+  readonly numActiveUsers: number
 }
 
 export interface AdvertisedVoice {
@@ -34,9 +36,9 @@ export interface AdvertisedVoice {
 }
 
 export type InstallState = "not-installed"|"installing"|"installed"
+export type LoadState = "not-loaded"|"loading"|"loaded"
 
 export interface Synthesizer {
-  readonly isBusy: boolean
   makeSpeech(opts: SpeakOptions): Speech
 }
 
