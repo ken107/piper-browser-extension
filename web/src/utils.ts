@@ -3,6 +3,11 @@ export function immediate<T>(func: () => T) {
   return func()
 }
 
+export function lazy<T>(func: () => T) {
+  let value: T
+  return () => value ?? (value = func())
+}
+
 export async function* iterateStream<T>(stream: ReadableStream<T>) {
   const reader = stream.getReader()
   try {

@@ -1,7 +1,8 @@
-import { PcmData } from "./types"
 import * as rxjs from "rxjs"
+import { PcmData } from "./types"
+import { lazy } from "./utils"
 
-const audioCtx = new AudioContext()
+const getAudioCtx = lazy(() => new AudioContext())
 
 
 export async function playAudio(
@@ -12,7 +13,8 @@ export async function playAudio(
   volume: number|undefined,
   control: rxjs.Observable<"play"|"pause"|"stop">
 ) {
-  const {buffer, peak} = makeAudioBuffer(pcmData, appendSilenceSeconds)
+  const audioCtx = getAudioCtx()
+  const {buffer, peak} = makeAudioBuffer(audioCtx, pcmData, appendSilenceSeconds)
 
   const gainNode = audioCtx.createGain()
   gainNode.gain.value = (volume ?? 1) / Math.max(.01, peak)
@@ -49,6 +51,7 @@ export async function playAudio(
 
 
 function makeAudioBuffer(
+  audioCtx: AudioContext,
   {samples, sampleRate, numChannels}: PcmData,
   appendSilenceSeconds: number
 ): {
