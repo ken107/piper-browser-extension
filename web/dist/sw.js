@@ -1,5 +1,17 @@
 
-const myCacheName = 'piper-v1'
+const myCache = {
+  'app-v1': [
+    '/',
+    '/index.html',
+    '/bundle.js',
+  ],
+  'bootstrap-v1': [
+    '/bootstrap.min.css',
+  ],
+  'wasm-v1': [
+    '/ort-wasm-simd-threaded.wasm',
+  ]
+}
 
 self.addEventListener('install', event => event.waitUntil(populateCache()))
 self.addEventListener('activate', event => event.waitUntil(removeOldCaches()))
@@ -7,19 +19,17 @@ self.addEventListener('fetch', event => event.respondWith(handleFetch(event.requ
 
 
 async function populateCache() {
-  const cache = await caches.open(myCacheName)
-  await cache.addAll([
-    '/',
-    '/index.html',
-    '/bootstrap.min.css',
-    '/bundle.js',
-    '/ort-wasm-simd-threaded.wasm',
-  ])
+  for (const key in myCache) {
+    if (!await caches.has(key)) {
+      const cache = await caches.open(key)
+      await cache.addAll(myCache[key])
+    }
+  }
 }
 
 async function removeOldCaches() {
   for (const key of await caches.keys()) {
-    if (key != myCacheName) await caches.delete(key)
+    if (!(key in myCache)) await caches.delete(key)
   }
 }
 
