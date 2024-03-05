@@ -55,13 +55,13 @@ export async function installVoice(voice: MyVoice, onProgress: (percent: number)
 }
 
 
-export async function deleteVoice(voice: MyVoice) {
-  await deleteFile(voice.key + ".onnx")
-  await deleteFile(voice.key + ".json")
+export async function deleteVoice(voiceKey: string) {
+  await deleteFile(voiceKey + ".onnx")
+  await deleteFile(voiceKey + ".json")
 }
 
 
-export function advertiseVoices(voices: AdvertisedVoice[]) {
+export function advertiseVoices(voices: readonly AdvertisedVoice[]) {
   top?.postMessage(<Message>{
     type: "notification",
     to: "piper-host",
@@ -71,7 +71,7 @@ export function advertiseVoices(voices: AdvertisedVoice[]) {
 }
 
 
-export function makeAdvertisedVoiceList(voiceList: MyVoice[]|null): AdvertisedVoice[]|null {
+export function makeAdvertisedVoiceList(voiceList: readonly MyVoice[]|null): AdvertisedVoice[]|null {
   if (voiceList == null) return null
   return voiceList
     .filter(x => x.installState == "installed")

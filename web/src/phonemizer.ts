@@ -48,7 +48,7 @@ export function makePhonemizer(modelConfig: ModelConfig) {
 
 
 //from: piper-phonemize/src/phoneme_ids.cpp
-function toPhonemeIds(phonemes: string[], modelConfig: ModelConfig): number[] {
+function toPhonemeIds(phonemes: readonly string[], modelConfig: ModelConfig): number[] {
   if (!modelConfig.phoneme_id_map) throw new Error("Missing modelConfig.phoneme_id_map")
 
   const {bos, eos, pad, addBos, addEos, interspersePad} = config.phonemeIdConfig

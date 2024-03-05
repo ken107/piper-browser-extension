@@ -67,7 +67,7 @@ function App() {
           <form onSubmit={onSubmitTest}>
             <textarea className="form-control" rows={3} name="text" defaultValue="It is a period of civil war. Rebel spaceships, striking from a hidden base, have won their first victory against the evil Galactic Empire. During the battle, Rebel spies managed to steal secret plans to the Empire's ultimate weapon, the DEATH STAR, an armored space station with enough power to destroy an entire planet. Pursued by the Empire's sinister agents, Princess Leia races home aboard her starship, custodian of the stolen plans that can save her people and restore freedom to the galaxy..." />
             <select className="form-control mt-3" name="voice">
-              <option value=""></option>
+              <option value="">Select a voice</option>
               {advertised?.map(voice =>
                 <option key={voice.voiceName} value={voice.voiceName}>{voice.voiceName}</option>
               )}
@@ -133,7 +133,7 @@ function App() {
                 <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                 <td className="align-top text-end ps-2">
                   <button type="button" className="btn btn-danger btn-sm"
-                    onClick={() => onDelete(voice)}>Delete</button>
+                    onClick={() => onDelete(voice.key)}>Delete</button>
                 </td>
               </tr>
             )}
@@ -224,12 +224,13 @@ function App() {
     }
   }
 
-  async function onDelete(voice: MyVoice) {
+  async function onDelete(voiceKey: string) {
+    if (!confirm("Are you sure you want to uninstall this voice?")) return;
     try {
-      synthesizers.delete(voice.key)
-      await deleteVoice(voice)
+      synthesizers.delete(voiceKey)
+      await deleteVoice(voiceKey)
       stateUpdater(draft => {
-        const voiceDraft = draft.voiceList!.find(x => x.key == voice.key)!
+        const voiceDraft = draft.voiceList!.find(x => x.key == voiceKey)!
         voiceDraft.loadState = "not-loaded"
         voiceDraft.installState = "not-installed"
       })

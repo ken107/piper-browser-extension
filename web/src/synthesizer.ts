@@ -57,7 +57,7 @@ async function makeInferenceEngine(model: Blob, modelConfig: ModelConfig) {
   const session = await ort.InferenceSession.create(URL.createObjectURL(model))
 
   return {
-    async infer(phonemeIds: number[], speakerId: number|undefined): Promise<PcmData> {
+    async infer(phonemeIds: readonly number[], speakerId: number|undefined): Promise<PcmData> {
       const feeds: Record<string, ort.Tensor> = {
         input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
         input_lengths: new ort.Tensor('int64', [phonemeIds.length]),

@@ -43,39 +43,39 @@ export interface Synthesizer {
 }
 
 export interface ModelConfig {
-  audio?: {
-    sample_rate?: number
+  readonly audio?: {
+    readonly sample_rate?: number
   }
-  espeak?: {
-    voice?: string
+  readonly espeak?: {
+    readonly voice?: string
   }
-  inference?: {
-    noise_scale?: number
-    length_scale?: number
-    noise_w?: number
-    phoneme_silence?: Record<string, number>
+  readonly inference?: {
+    readonly noise_scale?: number
+    readonly length_scale?: number
+    readonly noise_w?: number
+    readonly phoneme_silence?: Record<string, number>
   }
-  phoneme_type?: string
-  phoneme_map?: Record<string, string[]>
-  phoneme_id_map?: Record<string, number[]>
+  readonly phoneme_type?: string
+  readonly phoneme_map?: Record<string, readonly string[]>
+  readonly phoneme_id_map?: Record<string, readonly number[]>
 }
 
 export interface SpeakOptions {
-  speakerId?: number,
-  utterance: string,
-  pitch?: number,
-  rate?: number,
-  volume?: number
+  readonly speakerId?: number,
+  readonly utterance: string,
+  readonly pitch?: number,
+  readonly rate?: number,
+  readonly volume?: number
 }
 
 export interface Speech {
-  control: rxjs.Subject<"play"|"pause"|"stop">
-  readyPromise: Promise<void>
-  finishPromise: Promise<void>
+  readonly control: rxjs.Subject<"play"|"pause"|"stop">
+  readonly readyPromise: Promise<void>
+  readonly finishPromise: Promise<void>
 }
 
 export interface PcmData {
-  samples: Float32Array
-  sampleRate: number
-  numChannels: number
+  readonly samples: Float32Array
+  readonly sampleRate: number
+  readonly numChannels: number
 }
