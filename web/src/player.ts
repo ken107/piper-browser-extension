@@ -1,5 +1,4 @@
-import * as rxjs from "rxjs"
-import { PcmData } from "./types"
+import { PcmData, PlaybackControl } from "./types"
 import { lazy } from "./utils"
 
 const getAudioCtx = lazy(() => new AudioContext())
@@ -11,7 +10,7 @@ export async function playAudio(
   pitch: number|undefined,
   rate: number|undefined,
   volume: number|undefined,
-  control: rxjs.Observable<"play"|"pause"|"stop">
+  control: PlaybackControl
 ) {
   const audioCtx = getAudioCtx()
   const {buffer, peak} = makeAudioBuffer(audioCtx, pcmData, appendSilenceSeconds)
@@ -25,7 +24,7 @@ export async function playAudio(
   let command: "play"|"pause"|"stop"|"ended"
 
   do {
-    command = await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x != "pause")))
+    command = await control.wait(x => x != "pause")
 
     if (command == "play") {
       const source = audioCtx.createBufferSource()
@@ -37,7 +36,7 @@ export async function playAudio(
       startTime = audioCtx.currentTime - pauseOffset
 
       command = await Promise.race([
-        rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "pause" || x == "stop"))),
+        control.wait(x => x == "pause" || x == "stop"),
         endPromise
       ])
 

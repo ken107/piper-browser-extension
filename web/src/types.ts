@@ -38,8 +38,22 @@ export interface AdvertisedVoice {
 export type InstallState = "not-installed"|"installing"|"installed"
 export type LoadState = "not-loaded"|"loading"|"loaded"
 
+export type PlaybackState = "play"|"pause"|"stop"
+
+export interface PlaybackControl {
+  getState(): PlaybackState
+  setState(state: PlaybackState): void
+  wait(condition: (state: PlaybackState) => boolean): Promise<PlaybackState>
+}
+
 export interface Synthesizer {
-  makeSpeech(opts: SpeakOptions): Speech
+  speak(
+    opts: SpeakOptions,
+    control: PlaybackControl,
+    callbacks: {
+      onSentenceBoundary(charIndex: number): void
+    }
+  ): Promise<void>
 }
 
 export interface ModelConfig {
@@ -66,12 +80,6 @@ export interface SpeakOptions {
   readonly pitch?: number,
   readonly rate?: number,
   readonly volume?: number
-}
-
-export interface Speech {
-  readonly control: rxjs.Subject<"play"|"pause"|"stop">
-  readonly readyPromise: Promise<void>
-  readonly finishPromise: Promise<void>
 }
 
 export interface PcmData {

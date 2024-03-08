@@ -1,7 +1,8 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
+import * as rxjs from "rxjs"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice, Speech, Synthesizer } from "./types"
+import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice, PlaybackControl, PlaybackState } from "./types"
 import { fetchWithProgress, immediate } from "./utils"
 
 
@@ -138,47 +139,29 @@ export async function piperFetch(file: string, onProgress?: (percent: number) =>
 }
 
 
-export const messageDispatcher = makeDispatcher("piper-service", {})
+export const messageDispatcher = makeDispatcher<{send(message: unknown): void}>("piper-service", {})
 
 addEventListener("message", event => {
-  messageDispatcher.dispatch(event.data, null, res => event.source!.postMessage(res, {targetOrigin: event.origin}))
-})
-
-
-export const speechManager = immediate(() => {
-  const speeches = new Map<string, Speech>()
-  return {
-    add(speech: Speech) {
-      const id = String(Math.random())
-      speeches.set(id, speech)
-      speech.finishPromise.finally(() => speeches.delete(id))
-      return id
-    },
-    get(id: string) {
-      return speeches.get(id)
+  const sender = {
+    send(message: unknown) {
+      event.source!.postMessage(message, {targetOrigin: event.origin})
     }
   }
+  messageDispatcher.dispatch(event.data, sender, sender.send)
 })
 
 
-export const speechCache = immediate(() => {
-  const cache = new Map<string, {speech: Speech, timer: ReturnType<typeof setTimeout>}>()
+export function makePlaybackControl(initialState: PlaybackState): PlaybackControl {
+  const subject = new rxjs.BehaviorSubject(initialState)
   return {
-    add(key: string, speech: Speech, ttl: number) {
-      cache.set(key, {
-        speech,
-        timer: setTimeout(() => cache.delete(key), ttl)
-      })
+    getState() {
+      return subject.getValue()
     },
-    remove(key: string) {
-      const entry = cache.get(key)
-      if (entry) {
-        clearTimeout(entry.timer)
-        return entry.speech
-      }
+    setState(state: typeof initialState) {
+      subject.next(state)
+    },
+    wait(condition: (state: typeof initialState) => boolean) {
+      return rxjs.firstValueFrom(subject.pipe(rxjs.filter(condition)))
     }
   }
-})
-
-
-export const synthesizers = new Map<string, Synthesizer>()
+}

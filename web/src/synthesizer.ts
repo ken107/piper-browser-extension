@@ -1,46 +1,55 @@
 import * as ort from "onnxruntime-web"
-import * as rxjs from "rxjs"
 import config from "./config"
 import { makePhonemizer } from "./phonemizer"
 import { playAudio } from "./player"
-import { ModelConfig, PcmData, SpeakOptions, Speech, Synthesizer } from "./types"
+import { ModelConfig, PcmData, Synthesizer } from "./types"
 
-ort.env.wasm.numThreads = navigator.hardwareConcurrency
+ort.env.wasm.numThreads = (navigator.hardwareConcurrency > 2) ? (navigator.hardwareConcurrency - 1) : navigator.hardwareConcurrency
 
 
 export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
   const phonemizer = makePhonemizer(modelConfig)
   const engine = await makeInferenceEngine(model, modelConfig)
 
-  async function play(
-    {speakerId, utterance, pitch, rate, volume}: SpeakOptions,
-    control: rxjs.BehaviorSubject<"play"|"pause"|"stop">,
-    onCanPlay: () => void
+  async function synthesize(
+    {phonemes, phonemeIds}: {phonemes: string[], phonemeIds: number[]},
+    speakerId: number|undefined
   ) {
-    const phrases = await phonemizer.phonemize(utterance)
-    let prefetch: Promise<PcmData>|undefined
-    for (let index = 0; index < phrases.length && control.getValue() != "stop"; index++) {
-      const pcmData = await (prefetch || engine.infer(phrases[index].phonemeIds, speakerId))
-      if (index == 0) onCanPlay()
-      if (index+1 < phrases.length) {
-        const nextPhonemeIds = phrases[index+1].phonemeIds
-        prefetch = new Promise(f => setTimeout(f))
-          .then(() => engine.infer(nextPhonemeIds, speakerId))
-      }
-      await playAudio(pcmData, phrases[index].silenceSeconds, pitch, rate, volume, control)
+    const start = Date.now()
+    try {
+      return await engine.infer(phonemeIds, speakerId)
+    }
+    finally {
+      console.debug("Synthesized", phonemes.length, "in", Date.now()-start, phonemes.join(""))
     }
   }
 
   return {
-    makeSpeech(opts): Speech {
-      const control = new rxjs.BehaviorSubject<"play"|"pause"|"stop">("pause")
-      const canPlaySubject = new rxjs.Subject<void>()
-      const canPlayPromise = rxjs.firstValueFrom(canPlaySubject)
-      const finishPromise = play(opts, control, () => canPlaySubject.next())
-      return {
-        control,
-        readyPromise: Promise.race([canPlayPromise, finishPromise]),
-        finishPromise
+    async speak({speakerId, utterance, pitch, rate, volume}, control, {onSentenceBoundary}) {
+      const phrases = await phonemizer.phonemize(utterance)
+      if (control.getState() == "stop") throw {name: "interrupted", message: "Playback interrupted"}
+
+      const prefetch = new Array<Promise<PcmData>|undefined>(phrases.length)
+      for (let index = 0; index < phrases.length; index++) {
+        const pcmData = await (prefetch[index] || (prefetch[index] = synthesize(phrases[index], speakerId)))
+        if (await control.wait(state => state != "pause") == "stop") throw {name: "interrupted", message: "Playback interrupted"}
+
+        let numPhonemesToPrefetch = 50
+        for (let i = index + 1; i < phrases.length && numPhonemesToPrefetch > 0; i++) {
+          const phrase = phrases[i]
+          if (!prefetch[i]) {
+            prefetch[i] = prefetch[i-1]!
+              .then(() => new Promise(f => setTimeout(f)))
+              .then(() => {
+                if (control.getState() == "stop") throw {name: "interrupted", message: "Prefetch interrupted"}
+                return synthesize(phrase, speakerId)
+              })
+          }
+          numPhonemesToPrefetch -= phrase.phonemes.length
+        }
+
+        await playAudio(pcmData, phrases[index].silenceSeconds, pitch, rate, volume, control)
+        if (control.getState() == "stop") throw {name: "interrupted", message: "Playback interrupted"}
       }
     }
   }
@@ -64,9 +73,7 @@ async function makeInferenceEngine(model: Blob, modelConfig: ModelConfig) {
         scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
       }
       if (speakerId != undefined) feeds.sid = new ort.Tensor('int64', [speakerId])
-      const start = Date.now()
       const {output} = await session.run(feeds)
-      console.debug("Synthesized in", Date.now()-start, "ms", phonemeIds)
       return {
         samples: output.data as Float32Array,
         sampleRate,

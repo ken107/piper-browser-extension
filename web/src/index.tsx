@@ -1,12 +1,15 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, speechCache, speechManager, synthesizers } from "./services"
+import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, makePlaybackControl, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice } from "./types"
+import { MyVoice, PlaybackControl, Synthesizer } from "./types"
 import { immediate } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
+
+const synthesizers = new Map<string, Synthesizer>()
+let control: PlaybackControl|undefined
 
 
 function App() {
@@ -17,7 +20,6 @@ function App() {
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
-    testSpeech: React.useRef<{speechId: string}>(),
   }
   const installed = React.useMemo(() => state.voiceList?.filter(x => x.installState == "installed") ?? [], [state.voiceList])
   const notInstalled = React.useMemo(() => state.voiceList?.filter(x => x.installState != "installed") ?? [], [state.voiceList])
@@ -44,7 +46,6 @@ function App() {
   React.useEffect(() => {
     messageDispatcher.updateHandlers({
       speak: onSpeak,
-      wait: onWait,
       pause: onPause,
       resume: onResume,
       stop: onStop,
@@ -73,6 +74,16 @@ function App() {
               )}
             </select>
             <button type="submit" className="btn btn-primary mt-3">Speak</button>
+            {location.hostname == "localhost" &&
+              <>
+                <button type="button" className="btn btn-secondary mt-3 ms-1"
+                  onClick={() => onPause()}>Pause</button>
+                <button type="button" className="btn btn-secondary mt-3 ms-1"
+                  onClick={() => onResume()}>Resume</button>
+                <button type="button" className="btn btn-secondary mt-3 ms-1"
+                  onClick={() => onStop()}>Stop</button>
+              </>
+            }
           </form>
         </>
       }
@@ -193,8 +204,13 @@ function App() {
   //controllers
 
   function handleError(err: unknown) {
-    console.error(err)
-    appendActivityLog(String(err))
+    if (err instanceof Error) {
+      console.error(err)
+      appendActivityLog(String(err))
+    }
+    else {
+      appendActivityLog(JSON.stringify(err))
+    }
   }
 
   function appendActivityLog(text: string) {
@@ -240,88 +256,93 @@ function App() {
     }
   }
 
-  async function onSpeak({utterance, voiceName, pitch, rate, volume, prefetch}: Record<string, unknown>) {
+  async function onSpeak({utterance, voiceName, pitch, rate, volume}: Record<string, unknown>, sender: {send(message: unknown): void}) {
     if (!(
       typeof utterance == "string" &&
       typeof voiceName == "string" &&
       (typeof pitch == "number" || typeof pitch == "undefined") &&
       (typeof rate == "number" || typeof rate == "undefined") &&
-      (typeof volume == "number" || typeof volume == "undefined") &&
-      (typeof prefetch == "boolean" || typeof prefetch == "undefined")
+      (typeof volume == "number" || typeof volume == "undefined")
     )) {
       throw new Error("Bad args")
     }
+
     const {modelId, speakerName} = parseAdvertisedVoiceName(voiceName)
     const voice = state.voiceList!.find(({key}) => key.endsWith('-' + modelId))
     if (!voice) throw new Error("Voice not found")
+
     const speakerId = immediate(() => {
       if (speakerName) {
         if (!(speakerName in voice.speaker_id_map)) throw new Error("Speaker name not found")
         return voice.speaker_id_map[speakerName]
       }
     })
+
     appendActivityLog(`Synthesizing '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
+
+    control?.setState("stop")
+    control = makePlaybackControl("play")
+
     let synth = synthesizers.get(voice.key)
     if (!synth) {
       stateUpdater(draft => {
         draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
       })
-      const {model, modelConfig} = await getInstalledVoice(voice.key)
-      synthesizers.set(voice.key, synth = await makeSynthesizer(model, modelConfig))
+      try {
+        const {model, modelConfig} = await getInstalledVoice(voice.key)
+        if (control.getState() == "stop") throw {name: "cancelled", message: "Playback cancelled"}
+
+        synthesizers.set(voice.key, synth = await makeSynthesizer(model, modelConfig))
+        if (control.getState() == "stop") throw {name: "cancelled", message: "Playback cancelled"}
+      }
+      finally {
+        stateUpdater(draft => {
+          draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
+        })
+      }
+    }
+
+    immediate(async () => {
+      function notifyCaller(method: string, args?: Record<string, unknown>) {
+        sender.send({to: "piper-host", type: "notification", method, args})
+      }
       stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
+        draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
       })
-    }
-    stateUpdater(draft => {
-      draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
-    })
-    if (prefetch) {
-      speechCache.add(utterance, synth.makeSpeech({speakerId, utterance, pitch, rate, volume}), 5*60*1000)
-      return {
-        speechId: "dummy"
+      try {
+        await synth!.speak({speakerId, utterance, pitch, rate, volume}, control!, {
+          onSentenceBoundary: (charIndex: number) => notifyCaller("onSpeechSentenceBoundary", {charIndex})
+        })
+        notifyCaller("onSpeechFinish")
       }
-    }
-    else {
-      const speech = speechCache.remove(utterance) || synth.makeSpeech({speakerId, utterance, pitch, rate, volume})
-      await speech.readyPromise
-      speech.control.next("play")
-      speech.finishPromise
-        .then(() => stateUpdater(draft => {
+      catch (err) {
+        notifyCaller("onSpeechError", {error: err})
+      }
+      finally {
+        stateUpdater(draft => {
           draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
-        }))
-      return {
-        speechId: speechManager.add(speech)
+        })
       }
-    }
+    })
   }
 
-  async function onWait({speechId}: Record<string, unknown>) {
-    if (typeof speechId != "string") throw new Error("Bad args")
-    await speechManager.get(speechId)?.finishPromise
+  function onPause() {
+    control?.setState("pause")
   }
 
-  function onPause({speechId}: Record<string, unknown>) {
-    if (typeof speechId != "string") throw new Error("Bad args")
-    speechManager.get(speechId)?.control.next("pause")
+  function onResume() {
+    control?.setState("play")
   }
 
-  function onResume({speechId}: Record<string, unknown>) {
-    if (typeof speechId != "string") throw new Error("Bad args")
-    speechManager.get(speechId)?.control.next("play")
-  }
-
-  function onStop({speechId}: Record<string, unknown>) {
-    if (typeof speechId != "string") throw new Error("Bad args")
-    speechManager.get(speechId)?.control.next("stop")
+  function onStop() {
+    control?.setState("stop")
   }
 
   function onSubmitTest(event: React.FormEvent) {
     event.preventDefault()
     const form = event.target as any
     if (form.text.value && form.voice.value) {
-      if (refs.testSpeech.current) onStop(refs.testSpeech.current)
-      onSpeak({utterance: form.text.value, voiceName: form.voice.value})
-        .then(speech => refs.testSpeech.current = speech)
+      onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {send: console.log})
         .catch(handleError)
     }
   }
