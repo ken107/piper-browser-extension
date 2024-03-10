@@ -1,8 +1,18 @@
 const path = require('path')
 const CopyPlugin = require('copy-webpack-plugin')
+const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin
 
 module.exports = (env, argv) => ({
-  entry: './src/index.tsx',
+  entry: {
+    main: {
+      import: './src/index.tsx',
+      filename: 'bundle.js',
+    },
+    inferenceWorker: {
+      import: './src/inference-worker.ts',
+      filename: 'inference-worker.js',
+    },
+  },
   devtool: argv.mode == 'production' ? undefined : 'source-map',
   module: {
     rules: [
@@ -18,7 +28,6 @@ module.exports = (env, argv) => ({
   },
   output: {
     path: path.resolve(__dirname, 'build', argv.mode == 'production' ? 'release' : 'debug'),
-    filename: 'bundle.js',
   },
   plugins: [
     new CopyPlugin({
@@ -26,6 +35,7 @@ module.exports = (env, argv) => ({
         'dist',
         { from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', to: '[name][ext]' }
       ]
-    })
+    }),
+    ...(env.analyze ? [new BundleAnalyzerPlugin()] : [])
   ],
 })

@@ -243,6 +243,7 @@ function App() {
   async function onDelete(voiceKey: string) {
     if (!confirm("Are you sure you want to uninstall this voice?")) return;
     try {
+      synthesizers.get(voiceKey)?.dispose()
       synthesizers.delete(voiceKey)
       await deleteVoice(voiceKey)
       stateUpdater(draft => {

@@ -1,15 +1,26 @@
-import * as ort from "onnxruntime-web"
-import config from "./config"
+import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import { makePhonemizer } from "./phonemizer"
 import { playAudio } from "./player"
 import { ModelConfig, PcmData, Synthesizer } from "./types"
+import { immediate } from "./utils"
 
-ort.env.wasm.numThreads = (navigator.hardwareConcurrency > 2) ? (navigator.hardwareConcurrency - 1) : navigator.hardwareConcurrency
+const worker = immediate(() => {
+  const worker = new Worker("inference-worker.js")
+  const dispatcher = makeDispatcher("piper-service", {})
+  worker.addEventListener("message", event => dispatcher.dispatch(event.data, null, worker.postMessage))
+  return {
+    request<T>(method: string, args: Record<string, unknown>) {
+      const id = String(Date.now())
+      worker.postMessage({to: "piper-worker", type: "request", id, method, args})
+      return dispatcher.waitForResponse<T>(id)
+    }
+  }
+})
 
 
 export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
   const phonemizer = makePhonemizer(modelConfig)
-  const engine = await makeInferenceEngine(model, modelConfig)
+  const engineId = await worker.request("makeInferenceEngine", {model, modelConfig})
 
   async function synthesize(
     {phonemes, phonemeIds}: {phonemes: string[], phonemeIds: number[]},
@@ -17,7 +28,7 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
   ) {
     const start = Date.now()
     try {
-      return await engine.infer(phonemeIds, speakerId)
+      return await worker.request<PcmData>("infer", {engineId, phonemeIds, speakerId})
     }
     finally {
       console.debug("Synthesized", phonemes.length, "in", Date.now()-start, phonemes.join(""))
@@ -39,7 +50,6 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
           const phrase = phrases[i]
           if (!prefetch[i]) {
             prefetch[i] = prefetch[i-1]!
-              .then(() => new Promise(f => setTimeout(f)))
               .then(() => {
                 if (control.getState() == "stop") throw {name: "interrupted", message: "Prefetch interrupted"}
                 return synthesize(phrase, speakerId)
@@ -51,34 +61,10 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
         await playAudio(pcmData, phrases[index].silenceSeconds, pitch, rate, volume, control)
         if (control.getState() == "stop") throw {name: "interrupted", message: "Playback interrupted"}
       }
-    }
-  }
-}
+    },
 
-
-async function makeInferenceEngine(model: Blob, modelConfig: ModelConfig) {
-  const sampleRate = modelConfig.audio?.sample_rate ?? config.defaults.sampleRate
-  const numChannels = config.defaults.numChannels
-  const noiseScale = modelConfig.inference?.noise_scale ?? config.defaults.noiseScale
-  const lengthScale = modelConfig.inference?.length_scale ?? config.defaults.lengthScale
-  const noiseW = modelConfig.inference?.noise_w ?? config.defaults.noiseW
-
-  const session = await ort.InferenceSession.create(URL.createObjectURL(model))
-
-  return {
-    async infer(phonemeIds: readonly number[], speakerId: number|undefined): Promise<PcmData> {
-      const feeds: Record<string, ort.Tensor> = {
-        input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
-        input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
-        scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
-      }
-      if (speakerId != undefined) feeds.sid = new ort.Tensor('int64', [speakerId])
-      const {output} = await session.run(feeds)
-      return {
-        samples: output.data as Float32Array,
-        sampleRate,
-        numChannels
-      }
+    dispose() {
+      worker.request("dispose", {engineId}).catch(console.error)
     }
   }
 }

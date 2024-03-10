@@ -54,6 +54,7 @@ export interface Synthesizer {
       onSentenceBoundary(charIndex: number): void
     }
   ): Promise<void>
+  dispose(): void
 }
 
 export interface ModelConfig {

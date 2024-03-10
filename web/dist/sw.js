@@ -4,6 +4,7 @@ const myCache = {
     '/',
     '/index.html',
     '/bundle.js',
+    '/inference-worker.js',
   ],
   'bootstrap-v1': [
     '/bootstrap.min.css',
