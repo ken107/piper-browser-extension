@@ -303,6 +303,7 @@ function App() {
       }
     }
 
+    const speechId = String(Math.random())
     immediate(async () => {
       function notifyCaller(method: string, args?: Record<string, unknown>) {
         sender.send({to: "piper-host", type: "notification", method, args})
@@ -312,12 +313,14 @@ function App() {
       })
       try {
         await synth!.speak({speakerId, utterance, pitch, rate, volume}, control!, {
-          onSentenceBoundary: (charIndex: number) => notifyCaller("onSpeechSentenceBoundary", {charIndex})
+          onSentenceBoundary(charIndex: number) {
+            notifyCaller("onSpeechSentenceBoundary", {speechId, charIndex})
+          }
         })
-        notifyCaller("onSpeechFinish")
+        notifyCaller("onSpeechFinish", {speechId})
       }
       catch (err) {
-        notifyCaller("onSpeechError", {error: err})
+        notifyCaller("onSpeechError", {speechId, error: err})
       }
       finally {
         stateUpdater(draft => {
@@ -325,6 +328,7 @@ function App() {
         })
       }
     })
+    return speechId
   }
 
   function onPause() {

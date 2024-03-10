@@ -45,7 +45,7 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
         const pcmData = await (prefetch[index] || (prefetch[index] = synthesize(phrases[index], speakerId)))
         if (await control.wait(state => state != "pause") == "stop") throw {name: "interrupted", message: "Playback interrupted"}
 
-        let numPhonemesToPrefetch = 50
+        let numPhonemesToPrefetch = 100
         for (let i = index + 1; i < phrases.length && numPhonemesToPrefetch > 0; i++) {
           const phrase = phrases[i]
           if (!prefetch[i]) {
