@@ -1,6 +1,12 @@
 import { ModelConfig } from "./types"
 import config from "./config"
 
+export interface Phrase {
+  phonemes: string[]
+  phonemeIds: number[]
+  silenceSeconds: number
+}
+
 
 export function makePhonemizer(modelConfig: ModelConfig) {
   const phonemeType = (modelConfig.phoneme_type ?? config.defaults.phonemeType) == "text" ? "text" : "espeak"
@@ -9,7 +15,7 @@ export function makePhonemizer(modelConfig: ModelConfig) {
   if (phonemeType == "espeak" && !modelConfig.espeak?.voice) throw new Error("Missing modelConfig.espeak.voice")
 
   return {
-    async phonemize(text: string) {
+    async phonemize(text: string): Promise<Phrase[]> {
       const res = await fetch(config.serviceUrl + "/phonemizer?capabilities=phonemize-1.0", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -37,6 +43,7 @@ export function makePhonemizer(modelConfig: ModelConfig) {
       if (phrases.length) phrases[phrases.length-1].silenceSeconds = 0
 
       return phrases
+        .filter(x => x.phonemes.length)
         .map(({phonemes, silenceSeconds}) => ({
           phonemes,
           phonemeIds: toPhonemeIds(phonemes, modelConfig),

@@ -37,4 +37,7 @@ export default {
     // Add end of sentence (eos) symbol at end
     addEos: true,
   },
+
+  minPhonemesToPrefetch: 100,
+  paragraphSilenceSeconds: .65,
 }

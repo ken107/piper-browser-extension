@@ -1,5 +1,6 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import { makePhonemizer } from "./phonemizer"
+import config from "./config"
+import { Phrase, makePhonemizer } from "./phonemizer"
 import { playAudio } from "./player"
 import { ModelConfig, PcmData, Synthesizer } from "./types"
 import { immediate } from "./utils"
@@ -37,29 +38,53 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
 
   return {
     async speak({speakerId, utterance, pitch, rate, volume}, control, {onSentenceBoundary}) {
-      const phrases = await phonemizer.phonemize(utterance)
-      if (control.getState() == "stop") throw {name: "interrupted", message: "Playback interrupted"}
+      interface MyPhrase extends Phrase {
+        onEnd?: () => void
+      }
 
-      const prefetch = new Array<Promise<PcmData>|undefined>(phrases.length)
-      for (let index = 0; index < phrases.length; index++) {
-        const pcmData = await (prefetch[index] || (prefetch[index] = synthesize(phrases[index], speakerId)))
-        if (await control.wait(state => state != "pause") == "stop") throw {name: "interrupted", message: "Playback interrupted"}
+      const phrases = immediate(async function*() {
+        const paragraphs = splitParagraphs(utterance)
+        let charIndex = 0
 
-        let numPhonemesToPrefetch = 100
-        for (let i = index + 1; i < phrases.length && numPhonemesToPrefetch > 0; i++) {
-          const phrase = phrases[i]
-          if (!prefetch[i]) {
-            prefetch[i] = prefetch[i-1]!
+        for (let i = 0; i < paragraphs.length; i++) {
+          const isLastParagraph = i == paragraphs.length - 1
+          charIndex += paragraphs[i].length
+
+          const phrases: MyPhrase[] = await phonemizer.phonemize(paragraphs[i])
+          if (phrases.length) {
+            const lastPhrase = phrases[phrases.length - 1]
+            lastPhrase.silenceSeconds = config.paragraphSilenceSeconds
+            if (!isLastParagraph) lastPhrase.onEnd = onSentenceBoundary.bind(null, charIndex)
+            yield* phrases
+          }
+        }
+      })
+
+      const audioSegments = immediate(async function*() {
+        const prefetch = [] as Array<{phrase: MyPhrase, promise: Promise<PcmData>}>
+        const numPhonemesPrefetched = function() {
+          let count = 0
+          for (let i = 1; i < prefetch.length; i++) count += prefetch[i].phrase.phonemes.length
+          return count
+        }
+        for await (const phrase of phrases) {
+          prefetch.push({
+            phrase,
+            promise: (prefetch.length ? prefetch[prefetch.length-1].promise : Promise.resolve())
               .then(() => {
                 if (control.getState() == "stop") throw {name: "interrupted", message: "Prefetch interrupted"}
                 return synthesize(phrase, speakerId)
               })
-          }
-          numPhonemesToPrefetch -= phrase.phonemes.length
+          })
+          while (numPhonemesPrefetched() >= config.minPhonemesToPrefetch) yield prefetch.shift()!
         }
+        yield* prefetch
+      })
 
-        await playAudio(pcmData, phrases[index].silenceSeconds, pitch, rate, volume, control)
+      for await (const {phrase, promise} of audioSegments) {
+        await playAudio(await promise, phrase.silenceSeconds, pitch, rate, volume, control)
         if (control.getState() == "stop") throw {name: "interrupted", message: "Playback interrupted"}
+        phrase.onEnd?.()
       }
     },
 
@@ -67,4 +92,12 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
       worker.request("dispose", {engineId}).catch(console.error)
     }
   }
+}
+
+
+function splitParagraphs(text: string) {
+  const tokens = text.split(/(\n\n\s*)/)
+  const paragraphs = []
+  for (let i = 0; i < tokens.length; i += 2) paragraphs.push(tokens[i] + (tokens[i+1] ?? ''))
+  return paragraphs
 }
