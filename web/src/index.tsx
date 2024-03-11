@@ -313,14 +313,17 @@ function App() {
       })
       try {
         await synth!.speak({speakerId, utterance, pitch, rate, volume}, control!, {
-          onSentenceBoundary(charIndex: number) {
-            notifyCaller("onSpeechSentenceBoundary", {speechId, charIndex})
+          onSentence(startIndex: number, endIndex: number) {
+            notifyCaller("onSentence", {speechId, startIndex, endIndex})
+          },
+          onParagraph(startIndex: number, endIndex: number) {
+            notifyCaller("onParagraph", {speechId, startIndex, endIndex})
           }
         })
-        notifyCaller("onSpeechFinish", {speechId})
+        notifyCaller("onEnd", {speechId})
       }
       catch (err) {
-        notifyCaller("onSpeechError", {speechId, error: err})
+        notifyCaller("onError", {speechId, error: err})
       }
       finally {
         stateUpdater(draft => {

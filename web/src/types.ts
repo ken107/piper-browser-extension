@@ -51,7 +51,8 @@ export interface Synthesizer {
     opts: SpeakOptions,
     control: PlaybackControl,
     callbacks: {
-      onSentenceBoundary(charIndex: number): void
+      onSentence(startIndex: number, endIndex: number): void
+      onParagraph(startIndex: number, endIndex: number): void
     }
   ): Promise<void>
   dispose(): void

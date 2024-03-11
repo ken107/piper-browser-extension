@@ -37,24 +37,18 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
   }
 
   return {
-    async speak({speakerId, utterance, pitch, rate, volume}, control, {onSentenceBoundary}) {
+    async speak({speakerId, utterance, pitch, rate, volume}, control, {onSentence, onParagraph}) {
       interface MyPhrase extends Phrase {
-        onEnd?: () => void
+        onStart?: () => void
       }
 
       const phrases = immediate(async function*() {
         const paragraphs = splitParagraphs(utterance)
-        let charIndex = 0
-
-        for (let i = 0; i < paragraphs.length; i++) {
-          const isLastParagraph = i == paragraphs.length - 1
-          charIndex += paragraphs[i].length
-
+        for (let i = 0, charIndex = 0; i < paragraphs.length; charIndex += paragraphs[i].length, i++) {
           const phrases: MyPhrase[] = await phonemizer.phonemize(paragraphs[i])
           if (phrases.length) {
-            const lastPhrase = phrases[phrases.length - 1]
-            lastPhrase.silenceSeconds = config.paragraphSilenceSeconds
-            if (!isLastParagraph) lastPhrase.onEnd = onSentenceBoundary.bind(null, charIndex)
+            phrases[0].onStart = onParagraph.bind(null, charIndex, charIndex + paragraphs[i].length)
+            phrases[phrases.length - 1].silenceSeconds = config.paragraphSilenceSeconds
             yield* phrases
           }
         }
@@ -82,9 +76,9 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
       })
 
       for await (const {phrase, promise} of audioSegments) {
+        phrase.onStart?.()
         await playAudio(await promise, phrase.silenceSeconds, pitch, rate, volume, control)
         if (control.getState() == "stop") throw {name: "interrupted", message: "Playback interrupted"}
-        phrase.onEnd?.()
       }
     },
 
