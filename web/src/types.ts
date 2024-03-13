@@ -38,7 +38,7 @@ export interface AdvertisedVoice {
 export type InstallState = "not-installed"|"installing"|"installed"
 export type LoadState = "not-loaded"|"loading"|"loaded"
 
-export type PlaybackCommand = "play"|"pause"|"forward"|"rewind"
+export type PlaybackCommand = "pause"|"resume"|"forward"|"rewind"|"stop"
 
 export interface Synthesizer {
   speak(

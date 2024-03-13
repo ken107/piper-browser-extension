@@ -291,8 +291,10 @@ function App() {
     control?.complete()
     control = new rxjs.Subject<PlaybackCommand>()
     const abort = control.pipe(
-      rxjs.ignoreElements(),
-      rxjs.throwIfEmpty(() => ({name: "cancelled", message: "Playback cancelled"}))
+      rxjs.filter(cmd => cmd == "stop"),
+      rxjs.map(() => {
+        throw {name: "cancelled", message: "Playback cancelled"}
+      })
     )
     function abortable<T>(promise: Promise<T>) {
       return rxjs.firstValueFrom(rxjs.race(promise, abort))
@@ -350,11 +352,11 @@ function App() {
   }
 
   function onResume() {
-    control?.next("play")
+    control?.next("resume")
   }
 
   function onStop() {
-    control?.complete()
+    control?.next("stop")
   }
 
   function onForward() {

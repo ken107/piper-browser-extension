@@ -4,7 +4,7 @@ import { lazy } from "./utils"
 const getAudioCtx = lazy(() => new AudioContext())
 
 
-export async function playAudio(
+export function playAudio(
   pcmData: PcmData,
   appendSilenceSeconds: number,
   pitch: number|undefined,
@@ -41,6 +41,7 @@ function resumeFrom(
   return {
     endPromise,
     pause() {
+      source.onended = null
       source.stop()
       source.disconnect()
       const pauseOffset = audioCtx.currentTime - startTime
