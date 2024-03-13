@@ -1,4 +1,4 @@
-import { PcmData, PlaybackControl } from "./types"
+import { PcmData } from "./types"
 import { lazy } from "./utils"
 
 const getAudioCtx = lazy(() => new AudioContext())
@@ -10,7 +10,6 @@ export async function playAudio(
   pitch: number|undefined,
   rate: number|undefined,
   volume: number|undefined,
-  control: PlaybackControl
 ) {
   const audioCtx = getAudioCtx()
   const {buffer, peak} = makeAudioBuffer(audioCtx, pcmData, appendSilenceSeconds)
@@ -19,33 +18,39 @@ export async function playAudio(
   gainNode.gain.value = (volume ?? 1) / Math.max(.01, peak)
   gainNode.connect(audioCtx.destination)
 
-  let startTime: number
-  let pauseOffset = 0
-  let command: "play"|"pause"|"stop"|"ended"
+  return resumeFrom(audioCtx, gainNode, buffer, rate ?? 1, 0)
+}
 
-  do {
-    command = await control.wait(x => x != "pause")
 
-    if (command == "play") {
-      const source = audioCtx.createBufferSource()
-      source.buffer = buffer
-      source.playbackRate.value = rate ?? 1
-      const endPromise = new Promise<"ended">(f => source.onended = () => f("ended"))
-      source.connect(gainNode)
-      source.start(0, pauseOffset)
-      startTime = audioCtx.currentTime - pauseOffset
+function resumeFrom(
+  audioCtx: AudioContext,
+  destination: AudioNode,
+  buffer: AudioBuffer,
+  rate: number,
+  pauseOffset: number
+) {
+  const source = audioCtx.createBufferSource()
+  source.buffer = buffer
+  source.playbackRate.value = rate
+  const endPromise = new Promise(f => source.onended = f)
 
-      command = await Promise.race([
-        control.wait(x => x == "pause" || x == "stop"),
-        endPromise
-      ])
+  source.connect(destination)
+  source.start(0, pauseOffset)
+  const startTime = audioCtx.currentTime - pauseOffset
 
+  return {
+    endPromise,
+    pause() {
       source.stop()
       source.disconnect()
-      pauseOffset = audioCtx.currentTime - startTime
+      const pauseOffset = audioCtx.currentTime - startTime
+      return {
+        resume() {
+          return resumeFrom(audioCtx, destination, buffer, rate, pauseOffset)
+        }
+      }
     }
   }
-  while (command == "pause")
 }
 
 
@@ -53,10 +58,7 @@ function makeAudioBuffer(
   audioCtx: AudioContext,
   {samples, sampleRate, numChannels}: PcmData,
   appendSilenceSeconds: number
-): {
-  buffer: AudioBuffer,
-  peak: number
-} {
+) {
   const samplesPerChannel = samples.length / numChannels
   const buffer = audioCtx.createBuffer(numChannels, samplesPerChannel + (appendSilenceSeconds * sampleRate), sampleRate)
   let peak = 0

@@ -38,18 +38,12 @@ export interface AdvertisedVoice {
 export type InstallState = "not-installed"|"installing"|"installed"
 export type LoadState = "not-loaded"|"loading"|"loaded"
 
-export type PlaybackState = "play"|"pause"|"stop"
-
-export interface PlaybackControl {
-  getState(): PlaybackState
-  setState(state: PlaybackState): void
-  wait(condition: (state: PlaybackState) => boolean): Promise<PlaybackState>
-}
+export type PlaybackCommand = "play"|"pause"|"forward"|"rewind"
 
 export interface Synthesizer {
   speak(
     opts: SpeakOptions,
-    control: PlaybackControl,
+    control: rxjs.Observable<PlaybackCommand>,
     callbacks: {
       onSentence(startIndex: number, endIndex: number): void
       onParagraph(startIndex: number, endIndex: number): void

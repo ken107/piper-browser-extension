@@ -1,8 +1,7 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import * as rxjs from "rxjs"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice, PlaybackControl, PlaybackState } from "./types"
+import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice } from "./types"
 import { fetchWithProgress, immediate } from "./utils"
 
 
@@ -139,29 +138,11 @@ export async function piperFetch(file: string, onProgress?: (percent: number) =>
 }
 
 
-export const messageDispatcher = makeDispatcher<{send(message: unknown): void}>("piper-service", {})
-
-addEventListener("message", event => {
-  const sender = {
-    send(message: unknown) {
-      event.source!.postMessage(message, {targetOrigin: event.origin})
-    }
-  }
-  messageDispatcher.dispatch(event.data, sender, sender.send)
+export const messageDispatcher = immediate(() => {
+  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("piper-service", {})
+  addEventListener("message", event => {
+    const send = (msg: unknown) => event.source!.postMessage(msg, {targetOrigin: event.origin})
+    dispatcher.dispatch(event.data, {send}, send)
+  })
+  return dispatcher
 })
-
-
-export function makePlaybackControl(initialState: PlaybackState): PlaybackControl {
-  const subject = new rxjs.BehaviorSubject(initialState)
-  return {
-    getState() {
-      return subject.getValue()
-    },
-    setState(state: typeof initialState) {
-      subject.next(state)
-    },
-    wait(condition: (state: typeof initialState) => boolean) {
-      return rxjs.firstValueFrom(subject.pipe(rxjs.filter(condition)))
-    }
-  }
-}

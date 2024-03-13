@@ -1,15 +1,16 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
+import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, makePlaybackControl, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
+import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice, PlaybackControl, Synthesizer } from "./types"
+import { MyVoice, PlaybackCommand, Synthesizer } from "./types"
 import { immediate } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 const synthesizers = new Map<string, Synthesizer>()
-let control: PlaybackControl|undefined
+let control: rxjs.Subject<PlaybackCommand>|undefined
 
 
 function App() {
@@ -49,6 +50,8 @@ function App() {
       pause: onPause,
       resume: onResume,
       stop: onStop,
+      forward: onForward,
+      rewind: onRewind,
     })
   })
 
@@ -82,6 +85,10 @@ function App() {
                   onClick={() => onResume()}>Resume</button>
                 <button type="button" className="btn btn-secondary mt-3 ms-1"
                   onClick={() => onStop()}>Stop</button>
+                <button type="button" className="btn btn-secondary mt-3 ms-1"
+                  onClick={() => onForward()}>Forward</button>
+                <button type="button" className="btn btn-secondary mt-3 ms-1"
+                  onClick={() => onRewind()}>Rewind</button>
               </>
             }
           </form>
@@ -281,8 +288,15 @@ function App() {
 
     appendActivityLog(`Synthesizing '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
 
-    control?.setState("stop")
-    control = makePlaybackControl("play")
+    control?.complete()
+    control = new rxjs.Subject<PlaybackCommand>()
+    const abort = control.pipe(
+      rxjs.ignoreElements(),
+      rxjs.throwIfEmpty(() => ({name: "cancelled", message: "Playback cancelled"}))
+    )
+    function abortable<T>(promise: Promise<T>) {
+      return rxjs.firstValueFrom(rxjs.race(promise, abort))
+    }
 
     let synth = synthesizers.get(voice.key)
     if (!synth) {
@@ -290,11 +304,8 @@ function App() {
         draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
       })
       try {
-        const {model, modelConfig} = await getInstalledVoice(voice.key)
-        if (control.getState() == "stop") throw {name: "cancelled", message: "Playback cancelled"}
-
-        synthesizers.set(voice.key, synth = await makeSynthesizer(model, modelConfig))
-        if (control.getState() == "stop") throw {name: "cancelled", message: "Playback cancelled"}
+        const {model, modelConfig} = await abortable(getInstalledVoice(voice.key))
+        synthesizers.set(voice.key, synth = await abortable(makeSynthesizer(model, modelConfig)))
       }
       finally {
         stateUpdater(draft => {
@@ -335,15 +346,23 @@ function App() {
   }
 
   function onPause() {
-    control?.setState("pause")
+    control?.next("pause")
   }
 
   function onResume() {
-    control?.setState("play")
+    control?.next("play")
   }
 
   function onStop() {
-    control?.setState("stop")
+    control?.complete()
+  }
+
+  function onForward() {
+    control?.next("forward")
+  }
+
+  function onRewind() {
+    control?.next("rewind")
   }
 
   function onSubmitTest(event: React.FormEvent) {
