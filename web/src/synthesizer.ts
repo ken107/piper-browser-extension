@@ -1,11 +1,11 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import { makeStateMachine } from "@lsdsoftware/state-machine"
 import * as rxjs from "rxjs"
 import config from "./config"
 import { Phrase, makePhonemizer } from "./phonemizer"
 import { playAudio } from "./player"
-import { ModelConfig, PcmData, PlaybackCommand, Synthesizer } from "./types"
-import { immediate } from "./utils"
+import { ModelConfig, PcmData, SpeakOptions } from "./types"
+import { immediate, ExecutionSignal } from "./utils"
+
 
 const worker = immediate(() => {
   const worker = new Worker("inference-worker.js")
@@ -21,38 +21,41 @@ const worker = immediate(() => {
 })
 
 
-export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Promise<Synthesizer> {
+async function synthesize(
+  engineId: string,
+  {phonemes, phonemeIds}: {phonemes: string[], phonemeIds: number[]},
+  speakerId: number|undefined
+) {
+  const start = Date.now()
+  try {
+    return await worker.request<PcmData>("infer", {engineId, phonemeIds, speakerId})
+  }
+  finally {
+    console.debug("Synthesized", phonemes.length, "in", Date.now()-start, phonemes.join(""))
+  }
+}
+
+
+interface PlaylistItem {
+  paragraphIndex: number
+  play(executionSignal: ExecutionSignal): Promise<void>
+}
+
+
+export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig) {
   const phonemizer = makePhonemizer(modelConfig)
   const engineId = await worker.request("makeInferenceEngine", {model, modelConfig})
 
-  async function synthesize(
-    {phonemes, phonemeIds}: {phonemes: string[], phonemeIds: number[]},
-    speakerId: number|undefined
-  ) {
-    const start = Date.now()
-    try {
-      return await worker.request<PcmData>("infer", {engineId, phonemeIds, speakerId})
-    }
-    finally {
-      console.debug("Synthesized", phonemes.length, "in", Date.now()-start, phonemes.join(""))
-    }
-  }
-
   return {
-    async speak({speakerId, utterance, pitch, rate, volume}, control, {onSentence, onParagraph}) {
-      interface Playing {
-        endPromise: Promise<void>
-        pause(): {
-          resume(): Playing
-        }
+    async speak(
+      {speakerId, utterance, pitch, rate, volume}: SpeakOptions,
+      executionSignal: ExecutionSignal,
+      playlistNav: rxjs.Observable<"forward"|"rewind">,
+      {onSentence, onParagraph}: {
+        onSentence(startIndex: number, endIndex: number): void
+        onParagraph(startIndex: number, endIndex: number): void
       }
-
-      interface Item {
-        phrase: Phrase
-        onSelected(): void
-        play(): Playing
-      }
-
+    ) {
       const items: Item[] = immediate(() => {
         const paragraphs = splitParagraphs(utterance)
           .map(text => ({text, startIndex: 0, endIndex: 0}))
@@ -94,124 +97,7 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig): Pr
 */
       })
 
-      let index = 0
-      let playing: Playing|undefined
-      let paused: ReturnType<Playing["pause"]>|undefined
-      const playItem = function() {
-        playing = items[index].play()
-        playing.endPromise.then(() => sm.trigger("onNext"), reason => sm.trigger("onError", reason))
-      }
-      const finishSubject = new rxjs.Subject<void>()
-
-      const sm = makeStateMachine<"PLAYING"|"PAUSED"|"FINISHED", PlaybackCommand|"onNext"|"onError">({
-        IDLE: {
-          resume() {
-            if (index < items.length) {
-              items[index].onSelected()
-              playItem()
-              return "PLAYING"
-            }
-            else {
-              finishSubject.next()
-              return "FINISHED"
-            }
-          }
-        },
-        PLAYING: {
-          pause() {
-            if (playing) {
-              paused = playing.pause()
-              playing = undefined
-              return "PAUSED"
-            }
-          },
-          resume() {},
-          forward() {
-            if (index + 1 < items.length) {
-              playing?.pause()
-              index++
-              items[index].onSelected()
-              playItem()
-            }
-          },
-          rewind() {
-            if (index > 0) {
-              playing?.pause()
-              index--
-              items[index].onSelected()
-              playItem()
-            }
-          },
-          stop() {
-            playing?.pause()
-            finishSubject.error({name: "interrupted", message: "Playback interrupted"})
-            return "FINISHED"
-          },
-          onNext() {
-            if (index + 1 < items.length) {
-              index++
-              items[index].onSelected()
-              playItem()
-            }
-            else {
-              finishSubject.next()
-              return "FINISHED"
-            }
-          },
-          onError(reason: unknown) {
-            finishSubject.error(reason)
-            return "FINISHED"
-          }
-        },
-        PAUSED: {
-          pause() {},
-          resume() {
-            if (paused) {
-              playing = paused.resume()
-              paused = undefined
-              return "PLAYING"
-            }
-            else {
-              playItem()
-              return "PLAYING"
-            }
-          },
-          forward() {
-            if (index + 1 < items.length) {
-              paused = undefined
-              index++
-              items[index].onSelected()
-            }
-          },
-          rewind() {
-            if (index > 0) {
-              paused = undefined
-              index--
-              items[index].onSelected()
-            }
-          },
-          stop() {
-            finishSubject.error({name: "interrupted", message: "Playback interrupted"})
-            return "FINISHED"
-          }
-        },
-        FINISHED: {
-          pause() {},
-          resume() {},
-          forward() {},
-          rewind() {},
-          stop() {}
-        }
-      })
-
-      sm.trigger("resume")
-      const sub = control.subscribe(cmd => sm.trigger(cmd))
-      try {
-        await rxjs.firstValueFrom(finishSubject)
-      }
-      finally {
-        sub.unsubscribe()
-      }
+      await playPlaylist(items, executionSignal, playlistNav)
     },
 
     dispose() {
@@ -226,4 +112,60 @@ function splitParagraphs(text: string) {
   const paragraphs = []
   for (let i = 0; i < tokens.length; i += 2) paragraphs.push(tokens[i] + (tokens[i+1] ?? ''))
   return paragraphs
+}
+
+
+function playPlaylist(
+  items: PlaylistItem[],
+  executionSignal: ExecutionSignal,
+  playlistNav: rxjs.Observable<"forward"|"rewind">
+) {
+  return new Promise<void>((fulfill, reject) => {
+    const nextSubject = new rxjs.Subject<"next">()
+    rxjs.merge(nextSubject, playlistNav)
+      .pipe(
+        rxjs.startWith("next" as const),
+        rxjs.scan((index, cmd) => {
+          if (index == null) {
+            if (0 < items.length) return 0
+            else return null
+          }
+          switch (cmd) {
+            case "next":
+              if (index + 1 < items.length) return index + 1
+              else return null
+            case "forward":
+              for (let i = index + 1; i < items.length; i++) {
+                if (items[i].paragraphIndex == items[index].paragraphIndex + 1) return i
+              }
+              return index
+            case "rewind":
+              for (let i = 0; i < items.length; i++) {
+                if (items[i].paragraphIndex == items[index].paragraphIndex - 1) return i
+              }
+              return index
+          }
+        }, null as number|null),
+        rxjs.takeWhile(index => index != null),
+        rxjs.distinctUntilChanged(),
+        rxjs.switchMap(index => {
+          let abort: (reason: unknown) => void
+          const abortPromise = new Promise<void>((f, r) => abort = r)
+          const endPromise = items[index!].play({
+            paused: () => Promise.race([abortPromise, executionSignal.paused()]),
+            resumed: () => Promise.race([abortPromise, executionSignal.resumed()])
+          })
+          return rxjs.from(endPromise).pipe(
+            rxjs.finalize(() => abort({name: "interrupted", message: "Playback interrupted 3"}))
+          )
+        })
+      )
+      .subscribe({
+        next() {
+          nextSubject.next("next")
+        },
+        complete: fulfill,
+        error: reject
+      })
+  })
 }

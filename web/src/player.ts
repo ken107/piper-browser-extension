@@ -1,15 +1,16 @@
 import { PcmData } from "./types"
-import { lazy } from "./utils"
+import { ExecutionSignal, lazy } from "./utils"
 
 const getAudioCtx = lazy(() => new AudioContext())
 
 
-export function playAudio(
+export async function playAudio(
   pcmData: PcmData,
   appendSilenceSeconds: number,
   pitch: number|undefined,
   rate: number|undefined,
   volume: number|undefined,
+  executionSignal: ExecutionSignal,
 ) {
   const audioCtx = getAudioCtx()
   const {buffer, peak} = makeAudioBuffer(audioCtx, pcmData, appendSilenceSeconds)
@@ -18,16 +19,30 @@ export function playAudio(
   gainNode.gain.value = (volume ?? 1) / Math.max(.01, peak)
   gainNode.connect(audioCtx.destination)
 
-  return resumeFrom(audioCtx, gainNode, buffer, rate ?? 1, 0)
+  let pauseOffset = 0
+  while (true) {
+    await executionSignal.resumed()
+    const {endPromise, pause} = play(audioCtx, gainNode, buffer, rate ?? 1, pauseOffset)
+    try {
+      const action: "stop"|"pause" = await Promise.race([
+        endPromise.then(() => "stop" as const),
+        executionSignal.paused().then(() => "pause" as const)
+      ])
+      if (action == "stop") break
+    }
+    finally {
+      pauseOffset = pause()
+    }
+  }
 }
 
 
-function resumeFrom(
+function play(
   audioCtx: AudioContext,
   destination: AudioNode,
   buffer: AudioBuffer,
   rate: number,
-  pauseOffset: number
+  startOffset: number
 ) {
   const source = audioCtx.createBufferSource()
   source.buffer = buffer
@@ -35,8 +50,8 @@ function resumeFrom(
   const endPromise = new Promise(f => source.onended = f)
 
   source.connect(destination)
-  source.start(0, pauseOffset)
-  const startTime = audioCtx.currentTime - pauseOffset
+  source.start(0, startOffset)
+  const startTime = audioCtx.currentTime - startOffset
 
   return {
     endPromise,
@@ -44,12 +59,7 @@ function resumeFrom(
       source.onended = null
       source.stop()
       source.disconnect()
-      const pauseOffset = audioCtx.currentTime - startTime
-      return {
-        resume() {
-          return resumeFrom(audioCtx, destination, buffer, rate, pauseOffset)
-        }
-      }
+      return audioCtx.currentTime - startTime
     }
   }
 }

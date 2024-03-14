@@ -4,13 +4,14 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice, PlaybackCommand, Synthesizer } from "./types"
-import { immediate } from "./utils"
+import { MyVoice } from "./types"
+import { immediate, makeExecutionControl } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
-const synthesizers = new Map<string, Synthesizer>()
-let control: rxjs.Subject<PlaybackCommand>|undefined
+const synthesizers = new Map<string, Awaited<ReturnType<typeof makeSynthesizer>>>()
+const playlistNav = new rxjs.Subject<"forward"|"rewind">()
+let control: ReturnType<typeof makeExecutionControl>|undefined
 
 
 function App() {
@@ -288,83 +289,77 @@ function App() {
 
     appendActivityLog(`Synthesizing '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
 
-    control?.complete()
-    control = new rxjs.Subject<PlaybackCommand>()
-    const abort = control.pipe(
-      rxjs.filter(cmd => cmd == "stop"),
-      rxjs.map(() => {
-        throw {name: "cancelled", message: "Playback cancelled"}
-      })
-    )
-    function abortable<T>(promise: Promise<T>) {
-      return rxjs.firstValueFrom(rxjs.race(promise, abort))
-    }
+    control?.abort({name: "interrupted", message: "Playback interrupted 2"})
+    control = makeExecutionControl()
 
-    let synth = synthesizers.get(voice.key)
-    if (!synth) {
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
-      })
-      try {
-        const {model, modelConfig} = await abortable(getInstalledVoice(voice.key))
-        synthesizers.set(voice.key, synth = await abortable(makeSynthesizer(model, modelConfig)))
-      }
-      finally {
+    return control.run(async executionSignal => {
+      let synth = synthesizers.get(voice.key)
+      if (!synth) {
         stateUpdater(draft => {
-          draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
+          draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
         })
+        try {
+          const {model, modelConfig} = await getInstalledVoice(voice.key)
+          await executionSignal.resumed()
+          synthesizers.set(voice.key, synth = await makeSynthesizer(model, modelConfig))
+        }
+        finally {
+          stateUpdater(draft => {
+            draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
+          })
+        }
       }
-    }
 
-    const speechId = String(Math.random())
-    immediate(async () => {
-      function notifyCaller(method: string, args?: Record<string, unknown>) {
-        sender.send({to: "piper-host", type: "notification", method, args})
-      }
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
-      })
-      try {
-        await synth!.speak({speakerId, utterance, pitch, rate, volume}, control!, {
-          onSentence(startIndex: number, endIndex: number) {
-            notifyCaller("onSentence", {speechId, startIndex, endIndex})
-          },
-          onParagraph(startIndex: number, endIndex: number) {
-            notifyCaller("onParagraph", {speechId, startIndex, endIndex})
-          }
-        })
-        notifyCaller("onEnd", {speechId})
-      }
-      catch (err) {
-        notifyCaller("onError", {speechId, error: err})
-      }
-      finally {
+      const speechId = String(Math.random())
+      immediate(async () => {
+        function notifyCaller(method: string, args?: Record<string, unknown>) {
+          sender.send({to: "piper-host", type: "notification", method, args})
+        }
         stateUpdater(draft => {
-          draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+          draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
         })
-      }
+        try {
+          await synth!.speak({speakerId, utterance, pitch, rate, volume}, executionSignal, playlistNav.asObservable(), {
+            onSentence(startIndex: number, endIndex: number) {
+              notifyCaller("onSentence", {speechId, startIndex, endIndex})
+            },
+            onParagraph(startIndex: number, endIndex: number) {
+              notifyCaller("onParagraph", {speechId, startIndex, endIndex})
+            }
+          })
+          notifyCaller("onEnd", {speechId})
+        }
+        catch (err) {
+          notifyCaller("onError", {speechId, error: err})
+        }
+        finally {
+          stateUpdater(draft => {
+            draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+          })
+        }
+      })
+      return speechId
     })
-    return speechId
   }
 
   function onPause() {
-    control?.next("pause")
+    control?.pause()
   }
 
   function onResume() {
-    control?.next("resume")
+    control?.resume()
   }
 
   function onStop() {
-    control?.next("stop")
+    control?.abort({name: "interrupted", message: "Playback interrupted"})
   }
 
   function onForward() {
-    control?.next("forward")
+    playlistNav.next("forward")
   }
 
   function onRewind() {
-    control?.next("rewind")
+    playlistNav.next("rewind")
   }
 
   function onSubmitTest(event: React.FormEvent) {

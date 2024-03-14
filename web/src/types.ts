@@ -38,20 +38,6 @@ export interface AdvertisedVoice {
 export type InstallState = "not-installed"|"installing"|"installed"
 export type LoadState = "not-loaded"|"loading"|"loaded"
 
-export type PlaybackCommand = "pause"|"resume"|"forward"|"rewind"|"stop"
-
-export interface Synthesizer {
-  speak(
-    opts: SpeakOptions,
-    control: rxjs.Observable<PlaybackCommand>,
-    callbacks: {
-      onSentence(startIndex: number, endIndex: number): void
-      onParagraph(startIndex: number, endIndex: number): void
-    }
-  ): Promise<void>
-  dispose(): void
-}
-
 export interface ModelConfig {
   readonly audio?: {
     readonly sample_rate?: number
