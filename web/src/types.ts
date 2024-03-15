@@ -38,6 +38,9 @@ export interface AdvertisedVoice {
 export type InstallState = "not-installed"|"installing"|"installed"
 export type LoadState = "not-loaded"|"loading"|"loaded"
 
+export type PlaybackCommand = "pause"|"resume"|"forward"|"rewind"|"stop"
+export type ExecutionState = "paused"|"resumed"
+
 export interface ModelConfig {
   readonly audio?: {
     readonly sample_rate?: number

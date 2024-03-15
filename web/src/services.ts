@@ -1,7 +1,8 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
+import * as rxjs from "rxjs"
 import config from "./config"
 import { deleteFile, getFile } from "./storage"
-import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice } from "./types"
+import { AdvertisedVoice, ExecutionState, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice, PlaybackCommand } from "./types"
 import { fetchWithProgress, immediate } from "./utils"
 
 
@@ -146,3 +147,17 @@ export const messageDispatcher = immediate(() => {
   })
   return dispatcher
 })
+
+
+export function makeExecutionState(control: rxjs.Subject<PlaybackCommand>) {
+  return control.pipe(
+    rxjs.scan((state: ExecutionState, cmd) => {
+      if (cmd == "stop") throw {name: "interrupted", message: "Execution interrupted"}
+      if (state == "resumed" && cmd == "pause") return "paused"
+      if (state == "paused" && cmd == "resume") return "resumed"
+      return state
+    }, "resumed"),
+    rxjs.startWith("resumed" as const),
+    rxjs.shareReplay({bufferSize: 1, refCount: false})
+  )
+}
