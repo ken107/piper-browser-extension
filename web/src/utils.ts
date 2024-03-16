@@ -1,3 +1,4 @@
+import * as rxjs from "rxjs"
 
 export function immediate<T>(func: () => T) {
   return func()
@@ -49,4 +50,8 @@ export async function fetchWithProgress(url: string, callback: (percent: number)
   return new Blob(chunks, {
     type: response.headers.get('content-type') || undefined
   })
+}
+
+export async function wait<T>(obs: rxjs.Observable<T>, value: T) {
+  await rxjs.firstValueFrom(obs.pipe(rxjs.filter(x => x == value)))
 }

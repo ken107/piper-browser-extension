@@ -2,10 +2,10 @@ import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, makeExecutionState, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
+import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice, PlaybackCommand } from "./types"
-import { immediate } from "./utils"
+import { MyVoice, PlaybackCommand, PlaybackState } from "./types"
+import { immediate, wait } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -289,8 +289,7 @@ function App() {
     appendActivityLog(`Synthesizing '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
 
     currentControl?.next("stop")
-    const control = currentControl = new rxjs.Subject()
-    const executionState = makeExecutionState(control)
+
 
     let synth = synthesizers.get(voice.key)
     if (!synth) {
@@ -299,7 +298,7 @@ function App() {
       })
       try {
         const {model, modelConfig} = await getInstalledVoice(voice.key)
-        await rxjs.firstValueFrom(executionState.pipe(rxjs.filter(x => x == "resumed")))
+        await wait(playbackState, "resumed")
         synthesizers.set(voice.key, synth = await makeSynthesizer(model, modelConfig))
       }
       finally {
@@ -318,7 +317,7 @@ function App() {
         draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
       })
       try {
-        await synth!.speak({speakerId, utterance, pitch, rate, volume}, control.asObservable(), executionState, {
+        await synth!.speak({speakerId, utterance, pitch, rate, volume}, control.asObservable(), playbackState, {
           onSentence(startIndex: number, endIndex: number) {
             notifyCaller("onSentence", {speechId, startIndex, endIndex})
           },

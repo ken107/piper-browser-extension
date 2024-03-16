@@ -1,10 +1,9 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import * as rxjs from "rxjs"
 import config from "./config"
-import { Phrase, makePhonemizer } from "./phonemizer"
-import { playAudio } from "./player"
-import { playPlaylist, PlaylistItem } from "./playlist"
-import { ExecutionState, ModelConfig, PcmData, PlaybackCommand, SpeakOptions } from "./types"
+import { makePhonemizer } from "./phonemizer"
+import { PlaylistItem, playPlaylist } from "./playlist"
+import { ModelConfig, PcmData, PlaybackCommand, PlaybackState, SpeakOptions } from "./types"
 import { immediate } from "./utils"
 
 
@@ -45,13 +44,13 @@ export async function makeSynthesizer(model: Blob, modelConfig: ModelConfig) {
     async speak(
       {speakerId, utterance, pitch, rate, volume}: SpeakOptions,
       control: rxjs.Observable<PlaybackCommand>,
-      executionState: rxjs.Observable<ExecutionState>,
+      playbackState: rxjs.Observable<PlaybackState>,
       {onSentence, onParagraph}: {
         onSentence(startIndex: number, endIndex: number): void
         onParagraph(startIndex: number, endIndex: number): void
       }
     ) {
-      const items: PlaylistItem[] = immediate(() => {
+      const phrases = immediate(async function*() {
         const paragraphs = splitParagraphs(utterance)
           .map(text => ({text, startIndex: 0, endIndex: 0}))
         for (let i = 0, charIndex = 0; i < paragraphs.length; charIndex += paragraphs[i].text.length, i++) {

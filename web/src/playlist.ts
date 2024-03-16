@@ -1,18 +1,18 @@
 import * as rxjs from "rxjs"
-import { ExecutionState, PlaybackCommand } from "./types"
+import { PlaybackCommand, PlaybackState } from "./types"
 
 export interface PlaylistItem {
   seekIndex: number
   next(): PlaylistItem|null
   prev(): PlaylistItem|null
-  play(executionState: rxjs.Observable<ExecutionState>): Promise<void>
+  play(playbackState: rxjs.Observable<PlaybackState>): Promise<void>
 }
 
 
 export function playPlaylist(
   first: PlaylistItem|null,
   control: rxjs.Observable<PlaybackCommand>,
-  executionState: rxjs.Observable<ExecutionState>
+  playbackState: rxjs.Observable<PlaybackState>
 ) {
   return new Promise<void>((fulfill, reject) => {
     const nextSubject = new rxjs.Subject<"next">()
@@ -35,7 +35,7 @@ export function playPlaylist(
         rxjs.distinctUntilChanged(),
         rxjs.switchMap(item => {
           const abortSubject = new rxjs.Subject<never>()
-          const endPromise = item!.play(rxjs.race(abortSubject, executionState))
+          const endPromise = item!.play(rxjs.merge(abortSubject, playbackState))
           return rxjs.from(endPromise)
             .pipe(
               rxjs.finalize(() => abortSubject.error({name: "interrupted", message: "Playback interrupted"}))
