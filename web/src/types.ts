@@ -59,14 +59,6 @@ export interface ModelConfig {
   readonly phoneme_id_map?: Record<string, readonly number[]>
 }
 
-export interface SpeakOptions {
-  readonly speakerId?: number,
-  readonly utterance: string,
-  readonly pitch?: number,
-  readonly rate?: number,
-  readonly volume?: number
-}
-
 export interface PcmData {
   readonly samples: Float32Array
   readonly sampleRate: number

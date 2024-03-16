@@ -1,16 +1,16 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
-import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getInstalledVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
+import { advertiseVoices, deleteVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
+import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice, PlaybackCommand, PlaybackState } from "./types"
-import { immediate, wait } from "./utils"
+import { MyVoice } from "./types"
+import { immediate } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
-const synthesizers = new Map<string, Awaited<ReturnType<typeof makeSynthesizer>>>()
-let currentControl: rxjs.Subject<PlaybackCommand>|undefined
+const synthesizers = new Map<string, ReturnType<typeof makeSynthesizer>>()
+let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 
 
 function App() {
@@ -265,6 +265,10 @@ function App() {
   }
 
   async function onSpeak({utterance, voiceName, pitch, rate, volume}: Record<string, unknown>, sender: {send(message: unknown): void}) {
+    function notifyCaller(method: string, args?: Record<string, unknown>) {
+      sender.send({to: "piper-host", type: "notification", method, args})
+    }
+
     if (!(
       typeof utterance == "string" &&
       typeof voiceName == "string" &&
@@ -286,77 +290,72 @@ function App() {
       }
     })
 
-    appendActivityLog(`Synthesizing '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
+    appendActivityLog(`Speaking '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
 
-    currentControl?.next("stop")
-
-
-    let synth = synthesizers.get(voice.key)
-    if (!synth) {
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
-      })
-      try {
-        const {model, modelConfig} = await getInstalledVoice(voice.key)
-        await wait(playbackState, "resumed")
-        synthesizers.set(voice.key, synth = await makeSynthesizer(model, modelConfig))
-      }
-      finally {
-        stateUpdater(draft => {
-          draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
-        })
-      }
-    }
-
-    const speechId = String(Math.random())
-    immediate(async () => {
-      function notifyCaller(method: string, args?: Record<string, unknown>) {
-        sender.send({to: "piper-host", type: "notification", method, args})
-      }
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
-      })
-      try {
-        await synth!.speak({speakerId, utterance, pitch, rate, volume}, control.asObservable(), playbackState, {
-          onSentence(startIndex: number, endIndex: number) {
-            notifyCaller("onSentence", {speechId, startIndex, endIndex})
-          },
-          onParagraph(startIndex: number, endIndex: number) {
-            notifyCaller("onParagraph", {speechId, startIndex, endIndex})
-          }
-        })
-        notifyCaller("onEnd", {speechId})
-      }
-      catch (err) {
-        notifyCaller("onError", {speechId, error: err})
-      }
-      finally {
-        stateUpdater(draft => {
-          draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
-        })
-      }
+    const synth = synthesizers.get(voice.key) ?? immediate(() => {
+      appendActivityLog(`Initializing ${voice.name} [${voice.quality}], please wait...`)
+      const tmp = makeSynthesizer(voice.key)
+      synthesizers.set(voice.key, tmp)
+      return tmp
     })
+
+    currentSpeech?.control.next("stop")
+    const speechId = String(Math.random())
+    const speech = currentSpeech = makeSpeech(synth, speakerId, utterance, pitch, rate, volume)
+
+    stateUpdater(draft => {
+      draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
+    })
+    speech.statusObs
+      .subscribe({
+        next(event) {
+          if (event.type == "paragraph")
+            notifyCaller("onParagraph", {speechId, startIndex: event.startIndex, endIndex: event.endIndex})
+        },
+        complete() {
+          notifyCaller("onEnd", {speechId})
+        },
+        error(err) {
+          notifyCaller("onError", {speechId, error: err})
+        }
+      })
+      .add(() => stateUpdater(draft => {
+        draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+      }))
+
+    stateUpdater(draft => {
+      draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
+    })
+    try {
+      await synth.readyPromise
+    }
+    finally {
+      stateUpdater(draft => {
+        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
+      })
+    }
+  
     return speechId
   }
 
   function onPause() {
-    currentControl?.next("pause")
+    currentSpeech?.control.next("pause")
   }
 
   function onResume() {
-    currentControl?.next("resume")
+    currentSpeech?.control.next("resume")
   }
 
   function onStop() {
-    currentControl?.next("stop")
+    currentSpeech?.control.next("stop")
   }
 
   function onForward() {
-    currentControl?.next("forward")
+    currentSpeech?.control.next("forward")
   }
 
   function onRewind() {
-    currentControl?.next("rewind")
+    currentSpeech?.control.next("rewind")
   }
 
   function onSubmitTest(event: React.FormEvent) {
