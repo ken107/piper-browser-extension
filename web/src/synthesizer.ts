@@ -2,6 +2,7 @@ import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import { getInstalledVoice } from "./services"
 import { PcmData } from "./types"
 import { immediate } from "./utils"
+import { makePhonemizer } from "./phonemizer"
 
 
 const worker = immediate(() => {
@@ -19,10 +20,12 @@ const worker = immediate(() => {
 
 
 export function makeSynthesizer(voiceKey: string) {
-  const readyPromise = getInstalledVoice(voiceKey)
+  const modelPromise = getInstalledVoice(voiceKey)
+  const readyPromise = modelPromise
     .then(({model, modelConfig}) => worker.request("makeInferenceEngine", {model, modelConfig}))
   return {
     readyPromise,
+    phonemizerPromise: modelPromise.then(({modelConfig}) => makePhonemizer(modelConfig)),
     async synthesize(
       {phonemes, phonemeIds}: {phonemes: string[], phonemeIds: number[]},
       speakerId: number|undefined

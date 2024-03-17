@@ -1,86 +1,133 @@
 import * as rxjs from "rxjs"
-import { PlaybackCommand, PlaybackState } from "./types"
+import { Phrase } from "./phonemizer"
+import { playAudio } from "./player"
 import { makeSynthesizer } from "./synthesizer"
+import { PcmData } from "./types"
+import { wait } from "./utils"
+
+interface SpeakOptions {
+  speakerId: number|undefined,
+  text: string,
+  pitch: number|undefined,
+  rate: number|undefined,
+  volume: number|undefined
+}
+
+type Synthesizer = ReturnType<typeof makeSynthesizer>
+
+interface MyPhrase extends Phrase {
+  pcmDataPromise?: Promise<PcmData>
+}
+
+interface Paragraph {
+  index: number
+  text: string
+  phrasesPromise?: Promise<MyPhrase[]>
+}
+
+type PlaybackState = rxjs.Observable<"paused"|"resumed">
+
+interface Playing {
+  pause(): void
+  resume(): void
+  cancel(): void
+}
 
 
 export function makeSpeech(
-  synth: ReturnType<typeof makeSynthesizer>,
-  speakerId: number|undefined,
-  utterance: string,
-  pitch: number|undefined,
-  rate: number|undefined,
-  volume: number|undefined,
+  synth: Synthesizer,
+  opts: SpeakOptions,
+  callbacks: {
+    onParagraph(startIndex: number, endIndex: number): void
+    onComplete(error: unknown): void
+  }
 ) {
-  const control = new rxjs.Subject<PlaybackCommand>()
-  const playbackStateObs = control
-    .pipe(
-      rxjs.scan((state: PlaybackState, cmd) => {
-        if (cmd == "stop") throw {name: "interrupted", message: "Playback interrupted"}
-        if (state == "resumed" && cmd == "pause") return "paused"
-        if (state == "paused" && cmd == "resume") return "resumed"
-        return state
-      }, "resumed"),
-      rxjs.startWith("resumed" as const),
-      rxjs.distinctUntilChanged(),
-      rxjs.shareReplay({bufferSize: 1, refCount: false})
-    )
-  const statusSubject = new rxjs.Subject<{type: "paragraph", startIndex: number, endIndex: number}>()
-
-/*
+  const playlist = makePlaylist(synth, opts, callbacks)
+  let current: Playing|undefined = playlist.next(onEnd)
+  function onEnd() {
+    current = playlist.next(onEnd)
+  }
   return {
-    async speak(
-      {speakerId, utterance, pitch, rate, volume}: SpeakOptions,
-      control: rxjs.Observable<PlaybackCommand>,
-      playbackState: rxjs.Observable<PlaybackState>,
-      {onSentence, onParagraph}: {
-        onSentence(startIndex: number, endIndex: number): void
-        onParagraph(startIndex: number, endIndex: number): void
-      }
-    ) {
-      const phrases = immediate(async function*() {
-        const paragraphs = splitParagraphs(utterance)
-          .map(text => ({text, startIndex: 0, endIndex: 0}))
-        for (let i = 0, charIndex = 0; i < paragraphs.length; charIndex += paragraphs[i].text.length, i++) {
-          paragraphs[i].startIndex = charIndex
-          paragraphs[i].endIndex = charIndex + paragraphs[i].text.length
-        }
-
-        const phrases: MyPhrase[] = await phonemizer.phonemize(paragraphs[i])
-        if (phrases.length) {
-          phrases[0].onStart = onParagraph.bind(null, charIndex, charIndex + paragraphs[i].length)
-          phrases[phrases.length - 1].silenceSeconds = config.paragraphSilenceSeconds
-          yield* phrases
-        }
-      })
-
-      const audioSegments = immediate(async function*() {
-        const prefetch = [] as Array<{phrase: MyPhrase, promise: Promise<PcmData>}>
-        const numPhonemesPrefetched = function() {
-          let count = 0
-          for (let i = 1; i < prefetch.length; i++) count += prefetch[i].phrase.phonemes.length
-          return count
-        }
-        for await (const phrase of phrases) {
-          prefetch.push({
-            phrase,
-            promise: (prefetch.length ? prefetch[prefetch.length-1].promise : Promise.resolve())
-              .then(() => {
-                if (control.getState() == "stop") throw {name: "interrupted", message: "Prefetch interrupted"}
-                return synthesize(phrase, speakerId)
-              })
-          })
-          while (numPhonemesPrefetched() >= config.minPhonemesToPrefetch) yield prefetch.shift()!
-        }
-        yield* prefetch
-      })
-
-      await playPlaylist(head, control)
+    pause() {
+      current?.pause()
     },
-*/
+    resume() {
+      current?.resume()
+    },
+    cancel() {
+      current?.cancel()
+      current = undefined
+    },
+    forward() {
+      const playing = playlist.forward(onEnd)
+      if (playing) {
+        current?.cancel()
+        current = playing
+      }
+    },
+    rewind() {
+      const playing = playlist.rewind(onEnd)
+      if (playing) {
+        current?.cancel()
+        current = playing
+      }
+    },
+  }
+}
+
+
+function makePlaylist(
+  synth: Synthesizer,
+  opts: SpeakOptions,
+  playlistCallbacks: {
+    onParagraph(startIndex: number, endIndex: number): void
+    onComplete(error: unknown): void
+  }
+) {
+  const paras = splitParagraphs(opts.text).map((text, index) => ({index, text}))
+  let paraIndex = 0
+  let phraseIndex = -1
 
   return {
-    control,
-    statusObs: statusSubject.asObservable()
+    next(onComplete: () => void): Playing {
+      return makePlaying(async playbackState => {
+        const phrases = await getPhrases(synth, paras[paraIndex], playbackState)
+        await wait(playbackState, "resumed")
+        if (phraseIndex + 1 < phrases.length) {
+          phraseIndex++
+          await playPhrase(synth, opts, phrases[phraseIndex], playbackState, onComplete)
+        }
+        else if (paraIndex + 1 < paras.length) {
+          paraIndex++
+          phraseIndex = 0
+          await playPhrase(synth, opts, phrases[phraseIndex], playbackState, onComplete)
+        }
+        else {
+          playlistCallbacks.onComplete(null)
+        }
+      })
+    },
+
+    forward(onComplete: () => void): Playing {
+      return makePlaying(async playbackState => {
+        if (paraIndex + 1 < paras.length) {
+          paraIndex++
+          phraseIndex = 0
+          const phrases = await getPhrases(synth, paras[paraIndex], playbackState)
+          await wait(playbackState, "resumed")
+          await playPhrase(synth, opts, phrases[phraseIndex], playbackState, onComplete)
+        }
+        else {
+          playlistCallbacks.onComplete(null)
+        }
+      })
+    },
+
+    rewind(onComplete: () => void): Playing {
+      return makePlaying(async playbackState => {
+        //TODO
+      })
+    }
   }
 }
 
@@ -90,4 +137,57 @@ function splitParagraphs(text: string) {
   const paragraphs = []
   for (let i = 0; i < tokens.length; i += 2) paragraphs.push(tokens[i] + (tokens[i+1] ?? ''))
   return paragraphs
+}
+
+
+async function getPhrases(
+  synth: Synthesizer,
+  para: Paragraph,
+  playbackState: PlaybackState
+) {
+  if (!para.phrasesPromise) {
+    const phonemizer = await synth.phonemizerPromise
+    await wait(playbackState, "resumed")
+    para.phrasesPromise = phonemizer.phonemize(para.text)
+  }
+  return para.phrasesPromise
+}
+
+
+async function playPhrase(
+  synth: Synthesizer,
+  opts: SpeakOptions,
+  phrase: MyPhrase,
+  playbackState: PlaybackState,
+  onComplete: () => void
+) {
+  if (!phrase.pcmDataPromise) phrase.pcmDataPromise = synth.synthesize(phrase, opts.speakerId)
+  const pcmData = await phrase.pcmDataPromise
+  await wait(playbackState, "resumed")
+  let playing = playAudio(pcmData, phrase.silenceSeconds, opts.pitch, opts.rate, opts.volume, {onComplete})
+  while (true) {
+    await wait(playbackState, "paused")
+    const paused = playing.pause()
+    await wait(playbackState, "resumed")
+    playing = paused.resume()
+  }
+}
+
+
+function makePlaying(
+  synthesizeAndPlay: (playbackState: PlaybackState) => Promise<void>
+) {
+  const playbackState = new rxjs.BehaviorSubject<"paused"|"resumed">("resumed")
+  synthesizeAndPlay(playbackState.asObservable())
+  return {
+    pause() {
+      playbackState.next("paused")
+    },
+    resume() {
+      playbackState.next("resumed")
+    },
+    cancel() {
+      playbackState.error({name: "interrupted", message: "Playback interrupted"})
+    },
+  }
 }

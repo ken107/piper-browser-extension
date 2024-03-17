@@ -1,4 +1,3 @@
-import * as rxjs from "rxjs"
 
 export interface PiperVoice {
   readonly key: string
@@ -37,9 +36,6 @@ export interface AdvertisedVoice {
 
 export type InstallState = "not-installed"|"installing"|"installed"
 export type LoadState = "not-loaded"|"loading"|"loaded"
-
-export type PlaybackCommand = "pause"|"resume"|"forward"|"rewind"|"stop"
-export type PlaybackState = "paused"|"resumed"
 
 export interface ModelConfig {
   readonly audio?: {

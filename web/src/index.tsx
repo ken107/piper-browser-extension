@@ -299,29 +299,28 @@ function App() {
       return tmp
     })
 
-    currentSpeech?.control.next("stop")
+    currentSpeech?.cancel()
     const speechId = String(Math.random())
-    const speech = currentSpeech = makeSpeech(synth, speakerId, utterance, pitch, rate, volume)
 
     stateUpdater(draft => {
       draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
     })
-    speech.statusObs
-      .subscribe({
-        next(event) {
-          if (event.type == "paragraph")
-            notifyCaller("onParagraph", {speechId, startIndex: event.startIndex, endIndex: event.endIndex})
+    immediate(async () => {
+      currentSpeech = makeSpeech(synth, speakerId, utterance, pitch, rate, volume, {
+        onParagraph(startIndex, endIndex) {
+          notifyCaller("onParagraph", {speechId, startIndex, endIndex})
         },
-        complete() {
+        onEnd() {
           notifyCaller("onEnd", {speechId})
         },
-        error(err) {
-          notifyCaller("onError", {speechId, error: err})
+        onError(error) {
+          notifyCaller("onError", {speechId, error})
         }
       })
-      .add(() => stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
-      }))
+    })
+    .finally(() => stateUpdater(draft => {
+      draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+    }))
 
     stateUpdater(draft => {
       draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
@@ -339,23 +338,23 @@ function App() {
   }
 
   function onPause() {
-    currentSpeech?.control.next("pause")
+    currentSpeech?.pause()
   }
 
   function onResume() {
-    currentSpeech?.control.next("resume")
+    currentSpeech?.resume()
   }
 
   function onStop() {
-    currentSpeech?.control.next("stop")
+    currentSpeech?.cancel()
   }
 
   function onForward() {
-    currentSpeech?.control.next("forward")
+    currentSpeech?.forward()
   }
 
   function onRewind() {
-    currentSpeech?.control.next("rewind")
+    currentSpeech?.rewind()
   }
 
   function onSubmitTest(event: React.FormEvent) {

@@ -1,17 +1,18 @@
-import * as rxjs from "rxjs"
-import { PcmData, PlaybackState } from "./types"
-import { lazy, wait } from "./utils"
+import { PcmData } from "./types"
+import { lazy } from "./utils"
 
 const getAudioCtx = lazy(() => new AudioContext())
 
 
-export async function playAudio(
+export function playAudio(
   pcmData: PcmData,
   appendSilenceSeconds: number,
   pitch: number|undefined,
   rate: number|undefined,
   volume: number|undefined,
-  playbackState: rxjs.Observable<PlaybackState>
+  callbacks: {
+    onComplete(): void
+  }
 ) {
   const audioCtx = getAudioCtx()
   const {buffer, peak} = makeAudioBuffer(audioCtx, pcmData, appendSilenceSeconds)
@@ -20,21 +21,7 @@ export async function playAudio(
   gainNode.gain.value = (volume ?? 1) / Math.max(.01, peak)
   gainNode.connect(audioCtx.destination)
 
-  let pauseOffset = 0
-  while (true) {
-    await wait(playbackState, "resumed")
-    const {endPromise, pause} = play(audioCtx, gainNode, buffer, rate ?? 1, pauseOffset)
-    try {
-      const state = await Promise.race<"ended"|"paused">([
-        endPromise.then(() => "ended"),
-        wait(playbackState, "paused").then(() => "paused")
-      ])
-      if (state == "ended") break
-    }
-    finally {
-      pauseOffset = pause()
-    }
-  }
+  return play(audioCtx, gainNode, buffer, rate ?? 1, 0, callbacks)
 }
 
 
@@ -43,24 +30,32 @@ function play(
   destination: AudioNode,
   buffer: AudioBuffer,
   rate: number,
-  startOffset: number
+  startOffset: number,
+  callbacks: {
+    onComplete(): void
+  }
 ) {
   const source = audioCtx.createBufferSource()
   source.buffer = buffer
   source.playbackRate.value = rate
-  const endPromise = new Promise(f => source.onended = f)
+  source.onended = callbacks.onComplete
 
   source.connect(destination)
   source.start(0, startOffset)
   const startTime = audioCtx.currentTime - startOffset
 
   return {
-    endPromise,
     pause() {
       source.onended = null
       source.stop()
       source.disconnect()
-      return audioCtx.currentTime - startTime
+      const pauseOffset = audioCtx.currentTime - startTime
+
+      return {
+        resume() {
+          return play(audioCtx, destination, buffer, rate, pauseOffset, callbacks)
+        }
+      }
     }
   }
 }
