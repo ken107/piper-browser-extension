@@ -52,6 +52,19 @@ export async function fetchWithProgress(url: string, callback: (percent: number)
   })
 }
 
-export async function wait<T>(obs: rxjs.Observable<T>, value: T) {
-  await rxjs.firstValueFrom(obs.pipe(rxjs.filter(x => x == value)))
+export function wait<T>(obs: rxjs.Observable<T>, value: T) {
+  return rxjs.firstValueFrom(obs.pipe(rxjs.filter(x => x == value)))
+}
+
+export function makeExposedPromise<T>() {
+  const exposed = {} as {
+    promise: Promise<T>
+    fulfill(value: T): void
+    reject(reason: unknown): void
+  }
+  exposed.promise = new Promise((fulfill, reject) => {
+    exposed.fulfill = fulfill
+    exposed.reject = reject
+  })
+  return exposed
 }

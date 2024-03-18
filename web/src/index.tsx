@@ -301,26 +301,11 @@ function App() {
 
     currentSpeech?.cancel()
     const speechId = String(Math.random())
-
-    stateUpdater(draft => {
-      draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
+    currentSpeech = makeSpeech(synth, {speakerId, text: utterance, pitch, rate, volume}, {
+      onParagraph(startIndex, endIndex) {
+        notifyCaller("onParagraph", {speechId, startIndex, endIndex})
+      }
     })
-    immediate(async () => {
-      currentSpeech = makeSpeech(synth, speakerId, utterance, pitch, rate, volume, {
-        onParagraph(startIndex, endIndex) {
-          notifyCaller("onParagraph", {speechId, startIndex, endIndex})
-        },
-        onEnd() {
-          notifyCaller("onEnd", {speechId})
-        },
-        onError(error) {
-          notifyCaller("onError", {speechId, error})
-        }
-      })
-    })
-    .finally(() => stateUpdater(draft => {
-      draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
-    }))
 
     stateUpdater(draft => {
       draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
@@ -334,6 +319,24 @@ function App() {
       })
     }
   
+    immediate(async () => {
+      stateUpdater(draft => {
+        draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
+      })
+      try {
+        await currentSpeech!.completePromise
+        notifyCaller("onEnd", {speechId})
+      }
+      catch (error) {
+        notifyCaller("onError", {speechId, error})
+      }
+      finally {
+        stateUpdater(draft => {
+          draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+        })
+      }
+    })
+
     return speechId
   }
 
