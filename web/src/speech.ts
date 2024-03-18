@@ -3,33 +3,33 @@ import { playAudio } from "./audio"
 import { Phrase } from "./phonemizer"
 import { makeSynthesizer } from "./synthesizer"
 import { PcmData } from "./types"
-import { makeExposedPromise, wait } from "./utils"
+import { lazy, makeExposedPromise, wait } from "./utils"
 
 interface SpeakOptions {
-  speakerId: number|undefined,
-  text: string,
-  pitch: number|undefined,
-  rate: number|undefined,
-  volume: number|undefined
+  readonly speakerId: number|undefined,
+  readonly text: string,
+  readonly pitch: number|undefined,
+  readonly rate: number|undefined,
+  readonly volume: number|undefined
 }
 
 type Synthesizer = ReturnType<typeof makeSynthesizer>
 
 interface MyPhrase extends Phrase {
-  pcmDataPromise?: Promise<PcmData>
+  getPcmData(): Promise<PcmData>
 }
 
 interface Paragraph {
-  text: string
-  startIndex: number
-  endIndex: number
-  phrasesPromise?: Promise<MyPhrase[]>
+  readonly text: string
+  readonly startIndex: number
+  readonly endIndex: number
+  getPhrases(): Promise<MyPhrase[]>
 }
 
 type PlaybackState = rxjs.Observable<"paused"|"resumed">
 
 interface Playing {
-  completePromise: Promise<void|boolean>
+  readonly completePromise: Promise<void|boolean>
   pause(): void
   resume(): void
   cancel(): void
@@ -100,27 +100,31 @@ function makePlaylist(
     onParagraph(startIndex: number, endIndex: number): void
   }
 ) {
-  const paras = splitParagraphs(opts.text)
+  const paras = makeParagraphs(synth, opts)
   let paraIndex = 0
   let phraseIndex = -1
 
   return {
     next(): Playing {
       return makePlaying(async playbackState => {
-        const phrases = await getPhrases(synth, paras[paraIndex], playbackState)
+        const phrases = await paras[paraIndex].getPhrases()
         await wait(playbackState, "resumed")
+
         if (phraseIndex + 1 < phrases.length) {
+          //advance to next phrase in current paragraph
           phraseIndex++
-          await playPhrase(synth, opts, phrases[phraseIndex], playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         }
         else if (paraIndex + 1 < paras.length) {
+          //advance to next paragraph
           paraIndex++
           phraseIndex = 0
           callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
-          await playPhrase(synth, opts, phrases[phraseIndex], playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         }
         else {
-          return true   //end of playlist
+          //end of playlist
+          return true
         }
       })
     },
@@ -128,12 +132,11 @@ function makePlaylist(
     forward(): Playing|undefined {
       if (paraIndex + 1 < paras.length) {
         return makePlaying(async playbackState => {
+          //advance to next paragraph
           paraIndex++
           phraseIndex = 0
           callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
-          const phrases = await getPhrases(synth, paras[paraIndex], playbackState)
-          await wait(playbackState, "resumed")
-          await playPhrase(synth, opts, phrases[phraseIndex], playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         })
       }
     },
@@ -141,12 +144,11 @@ function makePlaylist(
     rewind(): Playing|undefined {
       if (paraIndex > 0) {
         return makePlaying(async playbackState => {
+          //rewind to previous paragraph
           paraIndex--
           phraseIndex = 0
           callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
-          const phrases = await getPhrases(synth, paras[paraIndex], playbackState)
-          await wait(playbackState, "resumed")
-          await playPhrase(synth, opts, phrases[phraseIndex], playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         })
       }
     }
@@ -154,50 +156,32 @@ function makePlaylist(
 }
 
 
-function splitParagraphs(text: string): Paragraph[] {
-  const tokens = text.split(/(\n\n\s*)/)
+function makeParagraphs(
+  synth: Synthesizer,
+  opts: SpeakOptions
+) {
+  const tokens = opts.text.split(/(\n\n\s*)/)
+
   const paragraphs = []
-  for (let i = 0; i < tokens.length; i += 2) paragraphs.push(tokens[i] + (tokens[i+1] ?? ''))
+  for (let i = 0; i < tokens.length; i += 2)
+    paragraphs.push(tokens[i] + (tokens[i+1] ?? ''))
+
   const indices = [0]
-  for (let i = 0; i < paragraphs.length; i++) indices.push(indices[i] + paragraphs[i].length)
-  return paragraphs
-    .map((text, i) => ({
-      text,
-      startIndex: indices[i],
-      endIndex: indices[i+1]
-    }))
-}
+  for (let i = 0; i < paragraphs.length; i++)
+    indices.push(indices[i] + paragraphs[i].length)
 
-
-async function getPhrases(
-  synth: Synthesizer,
-  para: Paragraph,
-  playbackState: PlaybackState
-) {
-  if (!para.phrasesPromise) {
-    const phonemizer = await synth.phonemizerPromise
-    await wait(playbackState, "resumed")
-    para.phrasesPromise = phonemizer.phonemize(para.text)
-  }
-  return para.phrasesPromise
-}
-
-
-async function playPhrase(
-  synth: Synthesizer,
-  opts: SpeakOptions,
-  phrase: MyPhrase,
-  playbackState: PlaybackState
-) {
-  if (!phrase.pcmDataPromise) phrase.pcmDataPromise = synth.synthesize(phrase, opts.speakerId)
-  const pcmData = await phrase.pcmDataPromise
-  await wait(playbackState, "resumed")
-  let playing = playAudio(pcmData, phrase.silenceSeconds, opts.pitch, opts.rate, opts.volume)
-  while (await Promise.race([wait(playbackState, "paused"), playing.completePromise]) == "paused") {
-    const paused = playing.pause()
-    await wait(playbackState, "resumed")
-    playing = paused.resume()
-  }
+  return paragraphs.map<Paragraph>((text, i) => ({
+    text,
+    startIndex: indices[i],
+    endIndex: indices[i+1],
+    getPhrases: lazy(async () => {
+      const phrases = await synth.phonemizerPromise.then(x => x.phonemize(text))
+      return phrases.map<MyPhrase>(phrase => ({
+        ...phrase,
+        getPcmData: lazy(() => synth.synthesize(phrase, opts.speakerId))
+      }))
+    })
+  }))
 }
 
 
@@ -216,5 +200,72 @@ function makePlaying(
     cancel() {
       playbackState.error({name: "interrupted", message: "Playback interrupted"})
     },
+  }
+}
+
+
+async function playPhrase(
+  opts: SpeakOptions,
+  paras: Paragraph[],
+  paraIndex: number,
+  phraseIndex: number,
+  playbackState: PlaybackState
+) {
+  prefetch(paras, paraIndex, phraseIndex, playbackState)
+
+  const phrases = await paras[paraIndex].getPhrases()
+  await wait(playbackState, "resumed")
+
+  const pcmData = await phrases[phraseIndex].getPcmData()
+  await wait(playbackState, "resumed")
+
+  let playing = playAudio(pcmData, phrases[phraseIndex].silenceSeconds, opts.pitch, opts.rate, opts.volume)
+  while (await Promise.race([wait(playbackState, "paused"), playing.completePromise]) == "paused") {
+    const paused = playing.pause()
+    await wait(playbackState, "resumed")
+    playing = paused.resume()
+  }
+}
+
+
+async function prefetch(
+  paras: Paragraph[],
+  paraIndex: number,
+  phraseIndex: number,
+  playbackState: PlaybackState
+) {
+  let numPhonemesToPrefetch = 100
+
+  //get the phrases of the current paragraph
+  let phrases = await paras[paraIndex].getPhrases()
+  await wait(playbackState, "resumed")
+
+  //wait until the current phrase has been synthesized before prefetching
+  await phrases[phraseIndex].getPcmData()
+  await wait(playbackState, "resumed")
+
+  while (numPhonemesToPrefetch > 0) {
+    if (phraseIndex + 1 < phrases.length) {
+      //advance to the next phrase in the current paragraph
+      phraseIndex++
+    }
+    else if (paraIndex + 1 < paras.length) {
+      //advance to the next paragraph
+      paraIndex++
+      phraseIndex = 0
+
+      //get the phrases
+      phrases = await paras[paraIndex].getPhrases()
+      await wait(playbackState, "resumed")
+    }
+    else {
+      break
+    }
+
+    //prefetch the phrase
+    await phrases[phraseIndex].getPcmData()
+    await wait(playbackState, "resumed")
+
+    numPhonemesToPrefetch -= phrases[phraseIndex].phonemes.length
   }
 }

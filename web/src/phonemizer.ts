@@ -2,9 +2,9 @@ import { ModelConfig } from "./types"
 import config from "./config"
 
 export interface Phrase {
-  phonemes: string[]
-  phonemeIds: number[]
-  silenceSeconds: number
+  readonly phonemes: string[]
+  readonly phonemeIds: number[]
+  readonly silenceSeconds: number
 }
 
 
