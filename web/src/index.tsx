@@ -300,44 +300,43 @@ function App() {
     })
 
     currentSpeech?.cancel()
-    const speechId = String(Math.random())
-    currentSpeech = makeSpeech(synth, {speakerId, text: utterance, pitch, rate, volume}, {
+    const speech = currentSpeech = makeSpeech(synth, {speakerId, text: utterance, pitch, rate, volume}, {
       onParagraph(startIndex, endIndex) {
-        notifyCaller("onParagraph", {speechId, startIndex, endIndex})
+        if (speech == currentSpeech) notifyCaller("onParagraph", {startIndex, endIndex})
       }
     })
 
-    stateUpdater(draft => {
-      draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
-    })
-    try {
-      await synth.readyPromise
-    }
-    finally {
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
-      })
-    }
-  
     immediate(async () => {
+      stateUpdater(draft => {
+        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
+      })
+      try {
+        await synth.readyPromise
+      }
+      finally {
+        stateUpdater(draft => {
+          draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
+        })
+      }
+  
       stateUpdater(draft => {
         draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
       })
       try {
-        await currentSpeech!.completePromise
-        notifyCaller("onEnd", {speechId})
+        if (speech == currentSpeech) notifyCaller("onStart")
+        await speech.completePromise
+        if (speech == currentSpeech) notifyCaller("onEnd")
       }
       catch (error) {
-        notifyCaller("onError", {speechId, error})
+        if (speech == currentSpeech) notifyCaller("onError", {error})
       }
       finally {
+        if (currentSpeech == speech) currentSpeech = undefined
         stateUpdater(draft => {
           draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
         })
       }
     })
-
-    return speechId
   }
 
   function onPause() {
@@ -350,6 +349,7 @@ function App() {
 
   function onStop() {
     currentSpeech?.cancel()
+    currentSpeech = undefined
   }
 
   function onForward() {
