@@ -44,50 +44,52 @@ export function makeSpeech(
   }
 ) {
   const playlist = makePlaylist(synth, opts, callbacks)
-  const completePromise = makeExposedPromise<void>()
-  let current: Playing|undefined = playlist.next()
-  current.completePromise.then(onItemComplete, onItemError)
-
-  function onItemComplete(isEndOfPlaylist: void|boolean) {
-    if (isEndOfPlaylist) {
-      completePromise.fulfill()
-    }
-    else {
-      current = playlist.next()
-      current.completePromise.then(onItemComplete, onItemError)
-    }
-  }
-  function onItemError(reason: unknown) {
-    completePromise.reject(reason)
-  }
-
+  const control = new rxjs.Subject<"pause"|"resume"|"next"|"forward"|"rewind">()
   return {
-    completePromise: completePromise.promise,
+    completePromise: new Promise<void>((fulfill, reject) => {
+      control
+        .pipe(
+          rxjs.startWith("next" as const),
+          rxjs.scan((current: Playing, cmd) => {
+            switch (cmd) {
+              case "pause": current.pause(); return current
+              case "resume": current.resume(); return current
+              case "next": return playlist.next()
+              case "forward": return playlist.forward() ?? current
+              case "rewind": return playlist.rewind() ?? current
+            }
+          }, null!),
+          rxjs.distinctUntilChanged(),
+          rxjs.switchMap(current => {
+            return rxjs.from(current.completePromise)
+              .pipe(
+                rxjs.finalize(() => current.cancel())
+              )
+          })
+        )
+        .subscribe({
+          next(isDone) {
+            if (isDone) control.complete()
+            else control.next("next")
+          },
+          complete: fulfill,
+          error: reject
+        })
+    }),
     pause() {
-      current?.pause()
+      control.next("pause")
     },
     resume() {
-      current?.resume()
+      control.next("resume")
     },
     cancel() {
-      current?.cancel()
-      current = undefined
+      control.error({name: "interrupted", message: "Playback interrupted"})
     },
     forward() {
-      const playing = playlist.forward()
-      if (playing) {
-        current?.cancel()
-        current = playing
-        current.completePromise.then(onItemComplete, onItemError)
-      }
+      control.next("forward")
     },
     rewind() {
-      const playing = playlist.rewind()
-      if (playing) {
-        current?.cancel()
-        current = playing
-        current.completePromise.then(onItemComplete, onItemError)
-      }
+      control.next("rewind")
     }
   }
 }
@@ -215,6 +217,7 @@ async function playPhrase(
     callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
 
   prefetch(paras, paraIndex, phraseIndex, playbackState)
+    .catch(err => "OK")
 
   const phrases = await paras[paraIndex].getPhrases()
   await wait(playbackState, "resumed")
@@ -223,10 +226,15 @@ async function playPhrase(
   await wait(playbackState, "resumed")
 
   let playing = playAudio(pcmData, phrases[phraseIndex].silenceSeconds, opts.pitch, opts.rate, opts.volume)
-  while (await Promise.race([wait(playbackState, "paused"), playing.completePromise]) == "paused") {
-    const paused = playing.pause()
-    await wait(playbackState, "resumed")
-    playing = paused.resume()
+  try {
+    while (await Promise.race([wait(playbackState, "paused"), playing.completePromise]) == "paused") {
+      const paused = playing.pause()
+      await wait(playbackState, "resumed")
+      playing = paused.resume()
+    }
+  }
+  finally {
+    playing.pause()
   }
 }
 
