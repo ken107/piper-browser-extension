@@ -113,14 +113,13 @@ function makePlaylist(
         if (phraseIndex + 1 < phrases.length) {
           //advance to next phrase in current paragraph
           phraseIndex++
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
         }
         else if (paraIndex + 1 < paras.length) {
           //advance to next paragraph
           paraIndex++
           phraseIndex = 0
-          callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
         }
         else {
           //end of playlist
@@ -135,8 +134,7 @@ function makePlaylist(
           //advance to next paragraph
           paraIndex++
           phraseIndex = 0
-          callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
         })
       }
     },
@@ -147,8 +145,7 @@ function makePlaylist(
           //rewind to previous paragraph
           paraIndex--
           phraseIndex = 0
-          callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
         })
       }
     }
@@ -160,7 +157,7 @@ function makeParagraphs(
   synth: Synthesizer,
   opts: SpeakOptions
 ) {
-  const tokens = opts.text.split(/(\n\n\s*)/)
+  const tokens = opts.text.split(/(\n\s*)/)
 
   const paragraphs = []
   for (let i = 0; i < tokens.length; i += 2)
@@ -209,8 +206,14 @@ async function playPhrase(
   paras: Paragraph[],
   paraIndex: number,
   phraseIndex: number,
-  playbackState: PlaybackState
+  playbackState: PlaybackState,
+  callbacks: {
+    onParagraph(startIndex: number, endIndex: number): void
+  }
 ) {
+  if (phraseIndex == 0)
+    callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
+
   prefetch(paras, paraIndex, phraseIndex, playbackState)
 
   const phrases = await paras[paraIndex].getPhrases()
