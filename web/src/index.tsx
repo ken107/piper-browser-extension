@@ -33,7 +33,7 @@ function App() {
       .then(voiceList => stateUpdater(draft => {
         draft.voiceList = voiceList
       }))
-      .catch(handleError)
+      .catch(reportError)
   }, [])
 
   //advertise voices
@@ -210,7 +210,7 @@ function App() {
 
   //controllers
 
-  function handleError(err: unknown) {
+  function reportError(err: unknown) {
     if (err instanceof Error) {
       console.error(err)
       appendActivityLog(String(err))
@@ -243,7 +243,7 @@ function App() {
       })
     }
     catch (err) {
-      handleError(err)
+      reportError(err)
     }
   }
 
@@ -260,15 +260,11 @@ function App() {
       })
     }
     catch (err) {
-      handleError(err)
+      reportError(err)
     }
   }
 
   async function onSpeak({utterance, voiceName, pitch, rate, volume}: Record<string, unknown>, sender: {send(message: unknown): void}) {
-    function notifyCaller(method: string, args?: Record<string, unknown>) {
-      sender.send({to: "piper-host", type: "notification", method, args})
-    }
-
     if (!(
       typeof utterance == "string" &&
       typeof voiceName == "string" &&
@@ -302,39 +298,48 @@ function App() {
     currentSpeech?.cancel()
     const speech = currentSpeech = makeSpeech(synth, {speakerId, text: utterance, pitch, rate, volume}, {
       onParagraph(startIndex, endIndex) {
-        if (speech == currentSpeech) notifyCaller("onParagraph", {startIndex, endIndex})
+        notifyCaller("onParagraph", {startIndex, endIndex})
       }
     })
+    function notifyCaller(method: string, args?: Record<string, unknown>) {
+      if (speech == currentSpeech)
+        sender.send({to: "piper-host", type: "notification", method, args})
+    }
 
     immediate(async () => {
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
-      })
       try {
-        await synth.readyPromise
+        try {
+          stateUpdater(draft => {
+            draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
+          })
+          await synth.readyPromise
+        }
+        finally {
+          stateUpdater(draft => {
+            draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
+          })
+        }
+
+        try {
+          stateUpdater(draft => {
+            draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
+          })
+          notifyCaller("onStart")
+          await speech.play()
+          notifyCaller("onEnd")
+        }
+        finally {
+          stateUpdater(draft => {
+            draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+          })
+        }
       }
-      finally {
-        stateUpdater(draft => {
-          draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
-        })
-      }
-  
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
-      })
-      try {
-        if (speech == currentSpeech) notifyCaller("onStart")
-        await speech.completePromise
-        if (speech == currentSpeech) notifyCaller("onEnd")
-      }
-      catch (error) {
-        if (speech == currentSpeech) notifyCaller("onError", {error})
+      catch (err) {
+        reportError(err)
+        notifyCaller("onError", {error: err})
       }
       finally {
         if (currentSpeech == speech) currentSpeech = undefined
-        stateUpdater(draft => {
-          draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
-        })
       }
     })
   }
@@ -365,7 +370,7 @@ function App() {
     const form = event.target as any
     if (form.text.value && form.voice.value) {
       onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {send: console.log})
-        .catch(handleError)
+        .catch(reportError)
     }
   }
 }

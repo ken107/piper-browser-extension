@@ -46,7 +46,7 @@ export function makeSpeech(
   const playlist = makePlaylist(synth, opts, callbacks)
   const control = new rxjs.Subject<"pause"|"resume"|"next"|"forward"|"rewind">()
   return {
-    completePromise: new Promise<void>((fulfill, reject) => {
+    play: lazy(() => new Promise<void>((fulfill, reject) => {
       control
         .pipe(
           rxjs.startWith("next" as const),
@@ -75,7 +75,7 @@ export function makeSpeech(
           complete: fulfill,
           error: reject
         })
-    }),
+    })),
     pause() {
       control.next("pause")
     },
