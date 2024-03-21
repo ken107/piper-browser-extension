@@ -1,9 +1,10 @@
 import * as rxjs from "rxjs"
 import { playAudio } from "./audio"
+import config from "./config"
 import { Phrase } from "./phonemizer"
 import { makeSynthesizer } from "./synthesizer"
 import { PcmData } from "./types"
-import { lazy, makeExposedPromise, wait } from "./utils"
+import { lazy, wait } from "./utils"
 
 interface SpeakOptions {
   readonly speakerId: number|undefined,
@@ -175,8 +176,10 @@ function makeParagraphs(
     endIndex: indices[i+1],
     getPhrases: lazy(async () => {
       const phrases = await synth.phonemizerPromise.then(x => x.phonemize(text))
-      return phrases.map<MyPhrase>(phrase => ({
-        ...phrase,
+      return phrases.map<MyPhrase>((phrase, index) => ({
+        phonemeIds: phrase.phonemeIds,
+        phonemes: phrase.phonemes,
+        silenceSeconds: index == phrases.length-1 ? config.paragraphSilenceSeconds : phrase.silenceSeconds,
         getPcmData: lazy(() => synth.synthesize(phrase, opts.speakerId))
       }))
     })
