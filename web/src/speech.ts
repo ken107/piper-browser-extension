@@ -116,13 +116,14 @@ function makePlaylist(
         if (phraseIndex + 1 < phrases.length) {
           //advance to next phrase in current paragraph
           phraseIndex++
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         }
         else if (paraIndex + 1 < paras.length) {
           //advance to next paragraph
           paraIndex++
           phraseIndex = 0
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
+          callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         }
         else {
           //end of playlist
@@ -137,7 +138,10 @@ function makePlaylist(
           //advance to next paragraph
           paraIndex++
           phraseIndex = 0
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
+          callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
+          await new Promise<void>(f => setTimeout(f, 750))
+          await wait(playbackState, "resumed")
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         })
       }
     },
@@ -148,7 +152,10 @@ function makePlaylist(
           //rewind to previous paragraph
           paraIndex--
           phraseIndex = 0
-          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState, callbacks)
+          callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
+          await new Promise<void>(f => setTimeout(f, 750))
+          await wait(playbackState, "resumed")
+          await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         })
       }
     }
@@ -212,13 +219,7 @@ async function playPhrase(
   paraIndex: number,
   phraseIndex: number,
   playbackState: PlaybackState,
-  callbacks: {
-    onParagraph(startIndex: number, endIndex: number): void
-  }
 ) {
-  if (phraseIndex == 0)
-    callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
-
   prefetch(paras, paraIndex, phraseIndex, playbackState)
     .catch(err => "OK")
 
