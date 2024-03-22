@@ -34,6 +34,7 @@ interface Playing {
   pause(): void
   resume(): void
   cancel(): void
+  isPaused(): boolean
 }
 
 
@@ -56,8 +57,8 @@ export function makeSpeech(
               case "pause": current.pause(); return current
               case "resume": current.resume(); return current
               case "next": return playlist.next()
-              case "forward": return playlist.forward() ?? current
-              case "rewind": return playlist.rewind() ?? current
+              case "forward": return playlist.forward(current.isPaused()) ?? current
+              case "rewind": return playlist.rewind(current.isPaused()) ?? current
             }
           }, null!),
           rxjs.distinctUntilChanged(),
@@ -132,7 +133,7 @@ function makePlaylist(
       })
     },
 
-    forward(): Playing|undefined {
+    forward(isPaused: boolean): Playing|undefined {
       if (paraIndex + 1 < paras.length) {
         return makePlaying(async playbackState => {
           //advance to next paragraph
@@ -142,11 +143,11 @@ function makePlaylist(
           await new Promise<void>(f => setTimeout(f, 750))
           await wait(playbackState, "resumed")
           await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
-        })
+        }, isPaused)
       }
     },
 
-    rewind(): Playing|undefined {
+    rewind(isPaused: boolean): Playing|undefined {
       if (paraIndex > 0) {
         return makePlaying(async playbackState => {
           //rewind to previous paragraph
@@ -156,7 +157,7 @@ function makePlaylist(
           await new Promise<void>(f => setTimeout(f, 750))
           await wait(playbackState, "resumed")
           await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
-        })
+        }, isPaused)
       }
     }
   }
@@ -195,9 +196,10 @@ function makeParagraphs(
 
 
 function makePlaying(
-  synthesizeAndPlay: (playbackState: PlaybackState) => Promise<void|boolean>
+  synthesizeAndPlay: (playbackState: PlaybackState) => Promise<void|boolean>,
+  isPaused = false
 ): Playing {
-  const playbackState = new rxjs.BehaviorSubject<"paused"|"resumed">("resumed")
+  const playbackState = new rxjs.BehaviorSubject<"paused"|"resumed">(isPaused ? "paused" : "resumed")
   return {
     completePromise: synthesizeAndPlay(playbackState.asObservable()),
     pause() {
@@ -209,6 +211,9 @@ function makePlaying(
     cancel() {
       playbackState.error({name: "interrupted", message: "Playback interrupted"})
     },
+    isPaused() {
+      return playbackState.getValue() == "paused"
+    }
   }
 }
 
