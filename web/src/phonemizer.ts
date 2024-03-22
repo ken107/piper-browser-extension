@@ -16,7 +16,7 @@ export function makePhonemizer(modelConfig: ModelConfig) {
 
   return {
     async phonemize(text: string): Promise<Phrase[]> {
-      const res = await fetch(config.serviceUrl + "/phonemizer?capabilities=phonemize-1.0", {
+      const res = await fetch(config.serviceUrl + "/piper?capabilities=phonemize-1.0", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({

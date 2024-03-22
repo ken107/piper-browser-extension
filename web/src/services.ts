@@ -1,6 +1,6 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import config from "./config"
-import { deleteFile, getFile } from "./storage"
+import { deleteFile, getFile, putFile } from "./storage"
 import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice } from "./types"
 import { fetchWithProgress, immediate } from "./utils"
 
@@ -146,3 +146,36 @@ export const messageDispatcher = immediate(() => {
   })
   return dispatcher
 })
+
+
+interface Stats {
+  createTime: number
+  voiceUsage?: {[voiceKey: string]: number|undefined}
+}
+
+export async function updateStats(updater: (stats: Stats) => void) {
+  try {
+    const stats: Stats = await getFile(config.stats.file)
+      .then(blob => blob.text())
+      .then(JSON.parse)
+      .catch(err => {
+        if (err instanceof DOMException && err.name == "NotFoundError") return {createTime: Date.now()}
+        throw err
+      })
+    updater(stats)
+    if (Date.now() - stats.createTime >= config.stats.maxAge) {
+      await fetch(config.serviceUrl + "/piper?capabilities=submitStats-1.0", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({method: "submitStats", stats})
+      })
+      await deleteFile(config.stats.file)
+    }
+    else {
+      await putFile(config.stats.file, new Blob([JSON.stringify(stats)], {type: "application/json"}))
+    }
+  }
+  catch (err) {
+    console.error(err)
+  }
+}

@@ -11,6 +11,11 @@ export default {
     "vi_VN-25hours_single-low",
   ]),
 
+  stats: {
+    file: "stats.json",
+    maxAge: 3600*1000
+  },
+
   //from: piper/src/cpp/piper.hpp
   defaults: {
     phonemeType: "espeak",

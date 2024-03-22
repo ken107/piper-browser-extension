@@ -1,7 +1,7 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
+import { advertiseVoices, deleteVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
 import { MyVoice } from "./types"
@@ -337,6 +337,7 @@ function App() {
           })
         }
 
+        const start = Date.now()
         try {
           stateUpdater(draft => {
             draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
@@ -348,6 +349,11 @@ function App() {
         finally {
           stateUpdater(draft => {
             draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
+          })
+          const duration = Date.now() - start
+          updateStats(stats => {
+            if (!stats.voiceUsage) stats.voiceUsage = {}
+            stats.voiceUsage[voice.key] = (stats.voiceUsage[voice.key] ?? 0) + duration
           })
         }
       }

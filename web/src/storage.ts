@@ -36,6 +36,14 @@ export async function getFile(name: string, fetchFile?: () => Promise<Blob>): Pr
   }
 }
 
+export async function putFile(name: string, blob: Blob): Promise<void> {
+  const folder = await folderPromise
+  const file = await folder.getFileHandle(name, {create: true})
+  const writable = await file.createWritable()
+  await writable.write(blob)
+  await writable.close()
+}
+
 export async function deleteFile(name: string) {
   const folder = await folderPromise
   await folder.removeEntry(name)
