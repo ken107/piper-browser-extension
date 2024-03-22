@@ -179,3 +179,15 @@ export async function updateStats(updater: (stats: Stats) => void) {
     console.error(err)
   }
 }
+
+
+export async function getPopularity() {
+  const res = await fetch(config.serviceUrl + "/piper?capabilities=getVoiceStats-1.0", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({method: "getVoiceStats"})
+  })
+  if (!res.ok) throw new Error("Server return " + res.status)
+  const voiceStats = await res.json()
+  return voiceStats.popularity
+}

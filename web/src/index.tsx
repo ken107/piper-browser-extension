@@ -1,7 +1,7 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { advertiseVoices, deleteVoice, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
+import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
 import { MyVoice } from "./types"
@@ -16,6 +16,7 @@ let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 function App() {
   const [state, stateUpdater] = useImmer({
     voiceList: null as MyVoice[]|null,
+    popularity: {} as {[voiceKey: string]: number},
     activityLog: "",
     isExpanded: {} as Record<string, boolean>,
   })
@@ -34,6 +35,11 @@ function App() {
         draft.voiceList = voiceList
       }))
       .catch(reportError)
+    getPopularity()
+      .then(popularity => stateUpdater(draft => {
+        draft.popularity = popularity
+      }))
+      .catch(console.error)
   }, [])
 
   //advertise voices
@@ -176,6 +182,7 @@ function App() {
               <tr>
                 <th>Voice Pack</th>
                 <th>Language</th>
+                <th>Popularity</th>
                 <th></th>
                 <th style={{width: "0%"}}></th>
               </tr>
@@ -205,6 +212,7 @@ function App() {
                     }
                   </td>
                   <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
+                  <td className="align-top">{state.popularity[voice.key]}</td>
                   <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                   <td className="align-top text-end ps-2">
                     <InstallButton voice={voice} onInstall={onInstall} />
