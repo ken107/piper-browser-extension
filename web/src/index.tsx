@@ -65,8 +65,13 @@ function App() {
 
   return (
     <div className="container">
+      <div className="text-end text-muted small mb-4">
+        <span><a target="_blank" href="https://github.com/rhasspy/piper" className="muted-link">The Piper project</a> | </span>
+        <span><a target="_blank" href="https://readaloud.app" className="muted-link">Read Aloud extension</a></span>
+      </div>
+
       {top == self &&
-        <>
+        <div>
           <h2 className="text-muted">Test</h2>
           <form onSubmit={onSubmitTest}>
             <textarea className="form-control" rows={3} name="text" defaultValue="It is a period of civil war. Rebel spaceships, striking from a hidden base, have won their first victory against the evil Galactic Empire. During the battle, Rebel spies managed to steal secret plans to the Empire's ultimate weapon, the DEATH STAR, an armored space station with enough power to destroy an entire planet. Pursued by the Empire's sinister agents, Princess Leia races home aboard her starship, custodian of the stolen plans that can save her people and restore freedom to the galaxy..." />
@@ -92,118 +97,130 @@ function App() {
               </>
             }
           </form>
-        </>
+        </div>
       }
 
-      <h2 className="text-muted">Activity Log</h2>
-      <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={state.activityLog} />
+      <div>
+        <h2 className="text-muted">Activity Log</h2>
+        <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={state.activityLog} />
+      </div>
 
-      <h2 className="text-muted">Installed</h2>
-      {installed.length == 0 &&
-        <div className="text-muted">Installed voices will appear here</div>
-      }
-      {installed.length > 0 &&
-        <table className="table table-borderless table-hover table-sm">
-          <thead>
-            <tr>
-              <th>Voice Pack</th>
-              <th>Language</th>
-              <th>Status</th>
-              <th></th>
-              <th style={{width: "0%"}}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {installed.map(voice =>
-              <tr key={voice.key}>
-                <td>
-                  <span className="me-1">{voice.name}</span>
-                  <span className="me-1">[{voice.quality}]</span>
-                  {voice.num_speakers <= 1 &&
-                    <span className="link" onClick={() => sampler.play(voice)}>sample</span>
-                  }
-                  {voice.num_speakers > 1 &&
-                    <span style={{cursor: "pointer"}}
-                      onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
-                  }
-                  {state.isExpanded[voice.key] &&
-                    <ul>
-                      {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
-                        <li key={speakerId}>
-                          <span className="me-1">{speakerName}</span>
-                          <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
-                        </li>
-                      )}
-                    </ul>
-                  }
-                </td>
-                <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
-                <td className="align-top">
-                  {immediate(() => {
-                    if (voice.numActiveUsers) return <span style={{fontWeight: "bold"}}>(in use)</span>
-                    switch (voice.loadState) {
-                      case "not-loaded": return "(on disk)"
-                      case "loading": return <span style={{fontWeight: "bold", color: "red"}}>(loading)</span>
-                      case "loaded": return "(in memory)"
+      <div>
+        <h2 className="text-muted">Installed</h2>
+        {installed.length == 0 &&
+          <div className="text-muted">Installed voices will appear here</div>
+        }
+        {installed.length > 0 &&
+          <table className="table table-borderless table-hover table-sm">
+            <thead>
+              <tr>
+                <th>Voice Pack</th>
+                <th>Language</th>
+                <th>Status</th>
+                <th></th>
+                <th style={{width: "0%"}}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {installed.map(voice =>
+                <tr key={voice.key}>
+                  <td>
+                    <span className="me-1">{voice.name}</span>
+                    <span className="me-1">[{voice.quality}]</span>
+                    {voice.num_speakers <= 1 &&
+                      <span className="link" onClick={() => sampler.play(voice)}>sample</span>
                     }
-                  })}
-                </td>
-                <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                <td className="align-top text-end ps-2">
-                  <button type="button" className="btn btn-danger btn-sm"
-                    onClick={() => onDelete(voice.key)}>Delete</button>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      }
+                    {voice.num_speakers > 1 &&
+                      <span style={{cursor: "pointer"}}
+                        onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
+                    }
+                    {state.isExpanded[voice.key] &&
+                      <ul>
+                        {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
+                          <li key={speakerId}>
+                            <span className="me-1">{speakerName}</span>
+                            <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
+                          </li>
+                        )}
+                      </ul>
+                    }
+                  </td>
+                  <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
+                  <td className="align-top">
+                    {immediate(() => {
+                      if (voice.numActiveUsers) return <span style={{fontWeight: "bold"}}>(in use)</span>
+                      switch (voice.loadState) {
+                        case "not-loaded": return "(on disk)"
+                        case "loading": return <span style={{fontWeight: "bold", color: "red"}}>(loading)</span>
+                        case "loaded": return "(in memory)"
+                      }
+                    })}
+                  </td>
+                  <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
+                  <td className="align-top text-end ps-2">
+                    <button type="button" className="btn btn-danger btn-sm"
+                      onClick={() => onDelete(voice.key)}>Delete</button>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        }
+      </div>
 
-      <h2 className="text-muted">Available to Install</h2>
-      {notInstalled.length > 0 &&
-        <table className="table table-borderless table-hover table-sm">
-          <thead>
-            <tr>
-              <th>Voice Pack</th>
-              <th>Language</th>
-              <th></th>
-              <th style={{width: "0%"}}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {notInstalled.map(voice =>
-              <tr key={voice.key}>
-                <td>
-                  <span className="me-1">{voice.name}</span>
-                  <span className="me-1">[{voice.quality}]</span>
-                  {voice.num_speakers <= 1 &&
-                    <span className="link" onClick={() => sampler.play(voice)}>sample</span>
-                  }
-                  {voice.num_speakers > 1 &&
-                    <span style={{cursor: "pointer"}}
-                      onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
-                  }
-                  {state.isExpanded[voice.key] &&
-                    <ul>
-                      {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
-                        <li key={speakerId}>
-                          <span className="me-1">{speakerName}</span>
-                          <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
-                        </li>
-                      )}
-                    </ul>
-                  }
-                </td>
-                <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
-                <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                <td className="align-top text-end ps-2">
-                  <InstallButton voice={voice} onInstall={onInstall} />
-                </td>
+      <div>
+        <h2 className="text-muted">Available to Install</h2>
+        {notInstalled.length > 0 &&
+          <table className="table table-borderless table-hover table-sm">
+            <thead>
+              <tr>
+                <th>Voice Pack</th>
+                <th>Language</th>
+                <th></th>
+                <th style={{width: "0%"}}></th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      }
+            </thead>
+            <tbody>
+              {notInstalled.map(voice =>
+                <tr key={voice.key}>
+                  <td>
+                    <span className="me-1">{voice.name}</span>
+                    <span className="me-1">[{voice.quality}]</span>
+                    {voice.num_speakers <= 1 &&
+                      <span className="link" onClick={() => sampler.play(voice)}>sample</span>
+                    }
+                    {voice.num_speakers > 1 &&
+                      <span style={{cursor: "pointer"}}
+                        onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
+                    }
+                    {state.isExpanded[voice.key] &&
+                      <ul>
+                        {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
+                          <li key={speakerId}>
+                            <span className="me-1">{speakerName}</span>
+                            <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
+                          </li>
+                        )}
+                      </ul>
+                    }
+                  </td>
+                  <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
+                  <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
+                  <td className="align-top text-end ps-2">
+                    <InstallButton voice={voice} onInstall={onInstall} />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        }
+      </div>
+
+      <div className="text-center text-muted small mb-2">
+        <span><a target="_blank" href="https://readaloud.app/tos.html" className="muted-link">Terms of Service</a> &mdash; </span>
+        <span><a target="_blank" href="https://readaloud.app/privacy.html" className="muted-link">Privacy Policy</a> &mdash; </span>
+        <span>&copy; <a target="_blank" href="https://lsdsoftware.com" className="muted-link">LSD Software</a></span>
+      </div>
     </div>
   )
 
