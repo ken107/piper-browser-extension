@@ -403,9 +403,11 @@ function App() {
           })
         }
       }
-      catch (err) {
-        reportError(err)
-        notifyCaller("onError", {error: err})
+      catch (err: any) {
+        if (err.name != "CancellationException") {
+          reportError(err)
+          notifyCaller("onError", {error: err})
+        }
       }
       finally {
         if (currentSpeech == speech) currentSpeech = undefined

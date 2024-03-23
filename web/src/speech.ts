@@ -85,7 +85,7 @@ export function makeSpeech(
       control.next("resume")
     },
     cancel() {
-      control.error({name: "interrupted", message: "Playback interrupted"})
+      control.error({name: "CancellationException", message: "Playback cancelled"})
     },
     forward() {
       control.next("forward")
@@ -210,7 +210,7 @@ function makePlaying(
       playbackState.next("resumed")
     },
     cancel() {
-      playbackState.error({name: "interrupted", message: "Playback interrupted"})
+      playbackState.error({name: "CancellationException", message: "Playback cancelled"})
     },
     isPaused() {
       return playbackState.getValue() == "paused"
@@ -227,24 +227,26 @@ async function playPhrase(
   playbackState: PlaybackState,
 ) {
   prefetch(paras, paraIndex, phraseIndex, playbackState)
-    .catch(err => "OK")
+    .catch(err => err.name != "CancellationException" && console.error(err))
 
   const phrases = await paras[paraIndex].getPhrases()
   await wait(playbackState, "resumed")
 
-  const pcmData = await phrases[phraseIndex].getPcmData()
-  await wait(playbackState, "resumed")
+  if (phraseIndex < phrases.length) {
+    const pcmData = await phrases[phraseIndex].getPcmData()
+    await wait(playbackState, "resumed")
 
-  let playing = playAudio(pcmData, phrases[phraseIndex].silenceSeconds, opts.pitch, opts.rate, opts.volume)
-  try {
-    while (await Promise.race([wait(playbackState, "paused"), playing.completePromise]) == "paused") {
-      const paused = playing.pause()
-      await wait(playbackState, "resumed")
-      playing = paused.resume()
+    let playing = playAudio(pcmData, phrases[phraseIndex].silenceSeconds, opts.pitch, opts.rate, opts.volume)
+    try {
+      while (await Promise.race([wait(playbackState, "paused"), playing.completePromise]) == "paused") {
+        const paused = playing.pause()
+        await wait(playbackState, "resumed")
+        playing = paused.resume()
+      }
     }
-  }
-  finally {
-    playing.pause()
+    finally {
+      playing.pause()
+    }
   }
 }
 
@@ -261,9 +263,11 @@ async function prefetch(
   let phrases = await paras[paraIndex].getPhrases()
   await wait(playbackState, "resumed")
 
-  //wait until the current phrase has been synthesized before prefetching
-  await phrases[phraseIndex].getPcmData()
-  await wait(playbackState, "resumed")
+  if (phraseIndex < phrases.length) {
+    //wait until the current phrase has been synthesized before prefetching
+    await phrases[phraseIndex].getPcmData()
+    await wait(playbackState, "resumed")
+  }
 
   while (numPhonemesToPrefetch > 0) {
     if (phraseIndex + 1 < phrases.length) {
@@ -283,10 +287,12 @@ async function prefetch(
       break
     }
 
-    //prefetch the phrase
-    await phrases[phraseIndex].getPcmData()
-    await wait(playbackState, "resumed")
+    if (phraseIndex < phrases.length) {
+      //prefetch the phrase
+      await phrases[phraseIndex].getPcmData()
+      await wait(playbackState, "resumed")
 
-    numPhonemesToPrefetch -= phrases[phraseIndex].phonemes.length
+      numPhonemesToPrefetch -= phrases[phraseIndex].phonemes.length
+    }
   }
 }
