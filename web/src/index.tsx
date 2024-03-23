@@ -19,6 +19,7 @@ function App() {
     popularity: {} as {[voiceKey: string]: number},
     activityLog: "",
     isExpanded: {} as Record<string, boolean>,
+    showInfoBox: false,
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
@@ -71,9 +72,9 @@ function App() {
 
   return (
     <div className="container">
-      <div className="text-end text-muted small mb-4">
-        <span><a target="_blank" href="https://github.com/rhasspy/piper" className="muted-link">The Piper project</a> | </span>
-        <span><a target="_blank" href="https://readaloud.app" className="muted-link">Read Aloud extension</a></span>
+      <div className="text-end text-muted small mt-1 mb-4">
+        <span className="link"
+          onClick={() => stateUpdater(draft => {draft.showInfoBox = true})}>What is Piper?</span>
       </div>
 
       {top == self &&
@@ -229,6 +230,43 @@ function App() {
         <span><a target="_blank" href="https://readaloud.app/privacy.html" className="muted-link">Privacy Policy</a> &mdash; </span>
         <span>&copy; <a target="_blank" href="https://lsdsoftware.com" className="muted-link">LSD Software</a></span>
       </div>
+
+      {state.showInfoBox &&
+        <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
+          onClick={e => e.target == e.currentTarget && stateUpdater(draft => {draft.showInfoBox = false})}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">What is Piper?</h5>
+                <button type="button" className="btn-close" aria-label="Close"
+                  onClick={() => stateUpdater(draft => {draft.showInfoBox = false})}></button>
+              </div>
+              <div className="modal-body">
+                <p>
+                  Piper is a collection of high-quality, open-source text-to-speech voices developed by
+                  the <a target="_blank" href="https://github.com/rhasspy/piper">Piper Project</a>.
+                  Utilizing advanced machine learning technology, these voices are synthesized in-browser
+                  without the need for cloud-based subscriptions, making them freely available for use.
+                  You can use them to read aloud web pages and documents with
+                  the <a target="_blank" href="https://readaloud.app">Read Aloud</a> extension,
+                  or make them available to other browser apps through
+                  the <a target="_blank" href="https://ttstool.com/redirect.html?target=piper-tts-extension">Piper TTS</a> extension.
+                </p>
+                <p>
+                  Each of the voice packs is a machine learning model capable of synthesizing one or more
+                  distinct voices.
+                  You need to install each pack separately before you can use its included voices.
+                  Due to the substantial size of these voice packs, it is advisable to install only those
+                  that you intend to use.
+                  They are saved in your browser's local storage, consuming space on your hard drive.
+                  To assist in your selection, you can refer to the "Popularity" ranking, which indicates the
+                  preferred choices among users.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   )
 
