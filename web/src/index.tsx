@@ -244,21 +244,20 @@ function App() {
               <div className="modal-body">
                 <p>
                   Piper is a collection of high-quality, open-source text-to-speech voices developed by
-                  the <a target="_blank" href="https://github.com/rhasspy/piper">Piper Project</a>.
-                  Utilizing advanced machine learning technology, these voices are synthesized in-browser
-                  without the need for cloud-based subscriptions, making them freely available for use.
+                  the <a target="_blank" href="https://github.com/rhasspy/piper">Piper Project</a>,
+                  powered by machine learning technology.
+                  These voices are synthesized in-browser, requiring no cloud subscriptions, and are entirely
+                  free to use.
                   You can use them to read aloud web pages and documents with
                   the <a target="_blank" href="https://readaloud.app">Read Aloud</a> extension,
-                  or make them available to other browser apps through
+                  or make them generally available to all browser apps through
                   the <a target="_blank" href="https://ttstool.com/redirect.html?target=piper-tts-extension">Piper TTS</a> extension.
                 </p>
                 <p>
                   Each of the voice packs is a machine learning model capable of synthesizing one or more
-                  distinct voices.
-                  You need to install each pack separately before you can use its included voices.
+                  distinct voices.  Each pack must be separately installed.
                   Due to the substantial size of these voice packs, it is advisable to install only those
                   that you intend to use.
-                  They are saved in your browser's local storage, consuming space on your hard drive.
                   To assist in your selection, you can refer to the "Popularity" ranking, which indicates the
                   preferred choices among users.
                 </p>
