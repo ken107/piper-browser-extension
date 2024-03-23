@@ -117,6 +117,7 @@ function makePlaylist(
         if (phraseIndex + 1 < phrases.length) {
           //advance to next phrase in current paragraph
           phraseIndex++
+          if (phraseIndex == 0) callbacks.onParagraph(paras[paraIndex].startIndex, paras[paraIndex].endIndex)
           await playPhrase(opts, paras, paraIndex, phraseIndex, playbackState)
         }
         else if (paraIndex + 1 < paras.length) {
