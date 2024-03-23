@@ -1,16 +1,21 @@
 
+//On app update, besides switching cache bucket, we need to force browser to get the latest versions
+//from the network by also changing the query string of every resource
+//Otherwise our new cache bucket might get populated with old files from the browser cache (or
+//any intermediary network caches)
+
 const myCache = {
   'app-v1': [
-    '/',
-    '/index.html',
-    '/bundle.js',
-    '/inference-worker.js',
+    '/?v=1',
+    '/index.html?v=1',
+    '/bundle.js?v=1',
+    '/inference-worker.js?v=1',
   ],
   'bootstrap-v1': [
-    '/bootstrap.min.css',
+    '/bootstrap.min.css?v=1',
   ],
   'wasm-v1': [
-    '/ort-wasm-simd-threaded.wasm',
+    '/ort-wasm-simd-threaded.wasm?v=1',
   ]
 }
 
@@ -35,5 +40,5 @@ async function removeOldCaches() {
 }
 
 async function handleFetch(request) {
-  return await caches.match(request) || fetch(request)
+  return await caches.match(request, {ignoreSearch: true}) || fetch(request)
 }
