@@ -13,8 +13,19 @@ export async function getVoiceList(): Promise<MyVoice[]> {
     .map(voice => {
       const modelFile = Object.keys(voice.files).find(x => x.endsWith(".onnx"))
       if (!modelFile) throw new Error("Can't identify model file for " + voice.name)
+      const speakerList = Object.entries(voice.speaker_id_map ?? {})
+        .map(([name, id]) => ({name, id, tokens: name.split(/(\d+)/)}))
+        .sort((a, b) => {
+          for (let i = 0; i < Math.min(a.tokens.length, b.tokens.length); i++) {
+            const dif = i % 2 == 0 ? a.tokens[i].localeCompare(b.tokens[i]) : Number(a.tokens[i]) - Number(b.tokens[i])
+            if (dif != 0) return dif
+          }
+          return a.tokens.length - b.tokens.length
+        })
+        .map(({name, id}) => ({speakerName: name, speakerId: id}))
       return {
         ...voice,
+        speakerList,
         modelFile,
         modelFileSize: voice.files[modelFile].size_bytes,
         installState: "not-installed" as InstallState,

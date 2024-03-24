@@ -203,8 +203,8 @@ function App() {
                     }
                     {state.isExpanded[voice.key] &&
                       <ul>
-                        {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
-                          <li key={speakerId}>
+                        {voice.speakerList.map(({speakerName, speakerId}) =>
+                          <li key={speakerName}>
                             <span className="me-1">{speakerName}</span>
                             <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
                           </li>
@@ -216,8 +216,8 @@ function App() {
                   <td className="align-top">
                     <div>{state.popularity[voice.key] ?? "\u00A0"}</div>
                     {state.isExpanded[voice.key] &&
-                      Object.keys(voice.speaker_id_map).map(speakerName =>
-                        <div>{state.popularity[voice.key + speakerName] ?? "\u00A0"}</div>
+                      voice.speakerList.map(({speakerName}) =>
+                        <div key={speakerName}>{state.popularity[voice.key + speakerName] ?? "\u00A0"}</div>
                       )
                     }
                   </td>

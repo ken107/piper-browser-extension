@@ -21,6 +21,7 @@ export interface PiperVoice {
 }
 
 export interface MyVoice extends PiperVoice {
+  readonly speakerList: Array<{speakerName: string, speakerId: number}>
   readonly modelFile: string
   readonly modelFileSize: number
   readonly installState: InstallState
