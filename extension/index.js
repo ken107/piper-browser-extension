@@ -6,9 +6,24 @@ let piperService
 
 const domDispatcher = makeDispatcher("piper-host", {
   advertiseVoices({voices}, sender) {
-    chrome.ttsEngine.updateVoices(voices)
+    chrome.ttsEngine.updateVoices(voices.map(voice => ({...voice, eventTypes: ["start", "sentence", "end", "error"]})))
     piperService = sender
-    chrome.runtime.sendMessage({to: "service-worker", type: "notification", method: "piperServiceReady"})
+    notifyServiceWorker("piperServiceReady")
+  },
+  onStart(args) {
+    notifyServiceWorker("onEvent", {method: "onStart", args})
+  },
+  onSentence(args) {
+    notifyServiceWorker("onEvent", {method: "onSentence", args})
+  },
+  onParagraph(args) {
+    notifyServiceWorker("onEvent", {method: "onParagraph", args})
+  },
+  onEnd(args) {
+    notifyServiceWorker("onEvent", {method: "onEnd", args})
+  },
+  onError(args) {
+    notifyServiceWorker("onEvent", {method: "onError", args})
   }
 })
 
@@ -42,9 +57,6 @@ const extDispatcher = makeDispatcher("piper-host", {
     if (!piperService) throw new Error("No service")
     return piperService.sendRequest("speak", args)
   },
-  wait(args) {
-    return piperService.sendRequest("wait", args)
-  },
   pause(args) {
     return piperService.sendRequest("pause", args)
   },
@@ -68,3 +80,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse(res)
   })
 })
+
+function notifyServiceWorker(method, args) {
+  chrome.runtime.sendMessage({
+    to: "service-worker",
+    type: "notification",
+    method,
+    args
+  })
+}

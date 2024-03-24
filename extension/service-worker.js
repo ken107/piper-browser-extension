@@ -44,6 +44,10 @@ importScripts("message-dispatcher.js")
 const extDispatcher = makeDispatcher("service-worker", {
   piperServiceReady() {
     piperHost.serviceReadyTopic.publish()
+  },
+  onEvent({method, args}) {
+    if (speech && speech[method]) speech[method](args)
+    else console.error("Unhandled event", method, args)
   }
 })
 
@@ -62,34 +66,61 @@ chrome.action.onClicked.addListener(() => {
 
 //ttsEngine commands
 
-let currentSpeech
+let speech
 
 chrome.ttsEngine.onSpeak.addListener(async (utterance, options, sendTtsEvent) => {
+  speech?.onError({error: {name: "CancellationException", message: "Playback cancelled"}})
+  speech = null
+
   try {
     await piperHost.ready({requestFocus: false})
-    currentSpeech = await piperHost.sendRequest("speak", {utterance, ...options})
-    sendTtsEvent({type: "start"})
-    await piperHost.sendRequest("wait", currentSpeech)
+    await piperHost.sendRequest("speak", {utterance, ...options})
+    await new Promise((fulfill, reject) => {
+      speech = {
+        onStart() {
+          sendTtsEvent({type: "start"})
+        },
+        onSentence({startIndex, endIndex}) {
+          sendTtsEvent({type: "sentence", charIndex: startIndex, length: endIndex-startIndex})
+        },
+        onParagraph({startIndex, endIndex}) {
+          sendTtsEvent({type: "sentence", charIndex: startIndex, length: endIndex-startIndex})
+        },
+        onEnd() {
+          fulfill()
+        },
+        onError({error}) {
+          reject(error)
+        }
+      }
+    })
     sendTtsEvent({type: "end"})
   }
   catch (err) {
-    sendTtsEvent({type: "error", errorMessage: err.message})
+    if (err instanceof Error) console.error(err)
+    if (err.name != "CancellationException") {
+      sendTtsEvent({type: "error", errorMessage: err.message})
+    }
+  }
+  finally {
+    speech = null
   }
 })
 
 chrome.ttsEngine.onPause.addListener(() => {
-  piperHost.sendRequest("pause", currentSpeech)
+  piperHost.sendRequest("pause")
     .catch(console.error)
 })
 
 chrome.ttsEngine.onResume.addListener(() => {
-  piperHost.sendRequest("resume", currentSpeech)
+  piperHost.sendRequest("resume")
     .catch(console.error)
 })
 
 chrome.ttsEngine.onStop.addListener(() => {
-  if (currentSpeech) {
-    piperHost.sendRequest("stop", currentSpeech)
-      .catch(console.error)
-  }
+  speech?.onError({error: {name: "CancellationException", message: "Playback cancelled"}})
+  speech = null
+
+  piperHost.sendRequest("stop")
+    .catch(console.error)
 })
