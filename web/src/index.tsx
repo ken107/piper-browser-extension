@@ -213,7 +213,14 @@ function App() {
                     }
                   </td>
                   <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
-                  <td className="align-top">{state.popularity[voice.key]}</td>
+                  <td className="align-top">
+                    <div>{state.popularity[voice.key] ?? "\u00A0"}</div>
+                    {state.isExpanded[voice.key] &&
+                      Object.keys(voice.speaker_id_map).map(speakerName =>
+                        <div>{state.popularity[voice.key + speakerName] ?? "\u00A0"}</div>
+                      )
+                    }
+                  </td>
                   <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
                   <td className="align-top text-end ps-2">
                     <InstallButton voice={voice} onInstall={onInstall} />
@@ -398,7 +405,8 @@ function App() {
           const duration = Date.now() - start
           updateStats(stats => {
             if (!stats.voiceUsage) stats.voiceUsage = {}
-            stats.voiceUsage[voice.key] = (stats.voiceUsage[voice.key] ?? 0) + duration
+            const hashKey = voice.key + (speakerName ?? "")
+            stats.voiceUsage[hashKey] = (stats.voiceUsage[hashKey] ?? 0) + duration
           })
         }
       }
