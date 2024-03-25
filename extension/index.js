@@ -1,5 +1,6 @@
 
 let piperService
+let speechId
 
 
 //handle messages from piper-service
@@ -11,19 +12,19 @@ const domDispatcher = makeDispatcher("piper-host", {
     notifyServiceWorker("piperServiceReady")
   },
   onStart(args) {
-    notifyServiceWorker("onEvent", {method: "onStart", args})
+    notifyServiceWorker("onStart", {...args, speechId})
   },
   onSentence(args) {
-    notifyServiceWorker("onEvent", {method: "onSentence", args})
+    notifyServiceWorker("onSentence", {...args, speechId})
   },
   onParagraph(args) {
-    notifyServiceWorker("onEvent", {method: "onParagraph", args})
+    notifyServiceWorker("onParagraph", {...args, speechId})
   },
   onEnd(args) {
-    notifyServiceWorker("onEvent", {method: "onEnd", args})
+    notifyServiceWorker("onEnd", {...args, speechId})
   },
   onError(args) {
-    notifyServiceWorker("onEvent", {method: "onError", args})
+    notifyServiceWorker("onError", {...args, speechId})
   }
 })
 
@@ -55,6 +56,7 @@ const extDispatcher = makeDispatcher("piper-host", {
   },
   speak(args) {
     if (!piperService) throw new Error("No service")
+    speechId = args.speechId
     return piperService.sendRequest("speak", args)
   },
   pause(args) {
