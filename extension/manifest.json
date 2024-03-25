@@ -14,7 +14,6 @@
     "128": "img/icon.png"
   },
   "permissions": [
-    "storage",
     "ttsEngine"
   ],
   "cross_origin_opener_policy": {

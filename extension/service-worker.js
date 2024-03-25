@@ -73,6 +73,13 @@ chrome.action.onClicked.addListener(() => {
     .catch(console.error)
 })
 
+chrome.runtime.onInstalled.addListener(details => {
+  if (details.reason == "install") {
+    piperHost.ready({requestFocus: true})
+      .catch(console.error)
+  }
+})
+
 
 
 //ttsEngine commands
