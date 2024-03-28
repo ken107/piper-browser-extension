@@ -15,40 +15,40 @@ export function makePhonemizer(modelConfig: ModelConfig) {
   if (phonemeType == "espeak" && !modelConfig.espeak?.voice) throw new Error("Missing modelConfig.espeak.voice")
 
   return {
-    async phonemize(text: string): Promise<Phrase[]> {
-      const res = await fetch(config.serviceUrl + "/piper?capabilities=phonemize-1.0", {
+    async batchPhonemize(texts: Array<string>): Promise<Array<Phrase[]>> {
+      const res = await fetch(config.serviceUrl + "/piper?capabilities=batchPhonemize-1.0", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-          method: "phonemize",
+          method: "batchPhonemize",
           type: phonemeType,
-          text,
+          texts,
           lang: phonemeType == "espeak" ? modelConfig.espeak!.voice : "ignore"
         })
       })
       if (!res.ok) throw new Error("Server return " + res.status)
 
-      const result = await res.json() as {text: string, phonemes: string[][]}
-      if (result.text != text) throw new Error("Unexpected")
-      const sentences = result.phonemes
-        .map(phonemes => ({
-          phonemes,
-          silenceSeconds: sentenceSilenceSeconds
-        }))
+      const results = await res.json() as Array<{text: string, phonemes: string[][]}>
+      if (results.length != texts.length || results.some((x,i) => x.text != texts[i])) throw new Error("Unexpected")
 
-      //TODO: handle phoneme_silence, i.e. break sentences further into phrases to insert phoneme silence
-      const phrases = sentences
+      return results.map(result => {
+        const sentences = result.phonemes
+          .map(phonemes => ({
+            phonemes,
+            silenceSeconds: sentenceSilenceSeconds
+          }))
 
-      //dont add silence for last phrase
-      if (phrases.length) phrases[phrases.length-1].silenceSeconds = 0
+        //TODO: handle phoneme_silence, i.e. break sentences further into phrases to insert phoneme silence
+        const phrases = sentences
 
-      return phrases
-        .filter(x => x.phonemes.length)
-        .map(({phonemes, silenceSeconds}) => ({
-          phonemes,
-          phonemeIds: toPhonemeIds(phonemes, modelConfig),
-          silenceSeconds
-        }))
+        return phrases
+          .filter(x => x.phonemes.length)
+          .map(({phonemes, silenceSeconds}) => ({
+            phonemes,
+            phonemeIds: toPhonemeIds(phonemes, modelConfig),
+            silenceSeconds
+          }))
+      })
     }
   }
 }

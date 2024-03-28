@@ -366,8 +366,8 @@ function App() {
 
     currentSpeech?.cancel()
     const speech = currentSpeech = makeSpeech(synth, {speakerId, text: utterance, pitch, rate, volume}, {
-      onParagraph(startIndex, endIndex) {
-        notifyCaller("onParagraph", {startIndex, endIndex})
+      onSentence(startIndex, endIndex) {
+        notifyCaller("onSentence", {startIndex, endIndex})
       }
     })
     function notifyCaller(method: string, args?: Record<string, unknown>) {

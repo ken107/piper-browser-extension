@@ -44,5 +44,5 @@ export default {
   },
 
   minPhonemesToPrefetch: 100,
-  paragraphSilenceSeconds: .65,
+  paragraphSilenceSeconds: .75,
 }

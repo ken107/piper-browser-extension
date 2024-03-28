@@ -68,3 +68,24 @@ export function makeExposedPromise<T>() {
   })
   return exposed
 }
+
+export function makeBatchProcessor<T, V>(maxBatchSize: number, process: (items: T[]) => Promise<V[]>) {
+  function makeBatch() {
+    const items: T[] = []
+    return {
+      items,
+      size: 0,
+      process: lazy(() => process(items))
+    }
+  }
+  let currentBatch: ReturnType<typeof makeBatch>|undefined
+  return {
+    add(item: T, itemSize: number): () => Promise<V> {
+      const batch = (currentBatch && currentBatch.size + itemSize <= maxBatchSize) ? currentBatch : (currentBatch = makeBatch())
+      const index = batch.items.length
+      batch.items.push(item)
+      batch.size += itemSize
+      return () => batch.process().then(results => results[index])
+    }
+  }
+}
