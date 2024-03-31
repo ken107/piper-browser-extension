@@ -15,11 +15,7 @@ const piperHost = {
       if (!await this.sendRequest("areYouThere", {requestFocus})) throw "Absent"
     }
     catch (err) {
-      await chrome.tabs.create({
-        url: "index.html",
-        pinned: true,
-        active: requestFocus
-      })
+      await chrome.tabs.create({url: "index.html", pinned: true, active: requestFocus})
       await new Promise(f => this.serviceReadyTopic.subscribeOnce(f))
     }
   },
@@ -49,9 +45,6 @@ const extDispatcher = makeDispatcher("service-worker", {
     chrome.ttsEngine.sendTtsEvent(speechId, {type: "start"})
   },
   onSentence({speechId, startIndex, endIndex}) {
-    chrome.ttsEngine.sendTtsEvent(speechId, {type: "sentence", charIndex: startIndex, length: endIndex-startIndex})
-  },
-  onParagraph({speechId, startIndex, endIndex}) {
     chrome.ttsEngine.sendTtsEvent(speechId, {type: "sentence", charIndex: startIndex, length: endIndex-startIndex})
   },
   onEnd({speechId}) {

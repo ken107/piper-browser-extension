@@ -187,7 +187,7 @@ function makeSentences(
   for (let i = 0; i < sentences.length; i++)
     indices.push(indices[i] + sentences[i].length)
 
-  const batchPhonemize = makeBatchProcessor(1000, async (sentences: string[]) => {
+  const batchPhonemize = makeBatchProcessor(config.phonemizeBatchSize, async (sentences: string[]) => {
     const phonemizer = await synth.phonemizerPromise
     return phonemizer.batchPhonemize(sentences)
   })
@@ -273,7 +273,7 @@ async function prefetch(
   phraseIndex: number,
   playbackState: PlaybackState
 ) {
-  let numPhonemesToPrefetch = 100
+  let numPhonemesToPrefetch = config.numPhonemesToPrefetch
 
   //get the phrases of the current sentence
   let phrases = await sentences[sentenceIndex].getPhrases()

@@ -6,7 +6,13 @@ import { fetchWithProgress, immediate } from "./utils"
 
 
 export async function getVoiceList(): Promise<MyVoice[]> {
-  const blob = await getFile("voices.json", () => piperFetch("voices.json"))
+  const blob = await getFile(config.voiceList.file, () => piperFetch("voices.json"))
+  if (blob instanceof File && Date.now()-blob.lastModified > config.voiceList.maxAge) {
+    console.log("Refreshing voice list")
+    piperFetch("voices.json")
+      .then(blob => putFile(config.voiceList.file, blob))
+      .catch(console.error)
+  }
   const voicesJson: Record<string, PiperVoice> = await blob.text().then(JSON.parse)
   const voiceList = Object.values(voicesJson)
     .filter(voice => !config.excludeVoices.has(voice.key))
@@ -89,7 +95,7 @@ export function makeAdvertisedVoiceList(voiceList: readonly MyVoice[]|null): Adv
     .flatMap<AdvertisedVoice>(voice => {
       const modelId = voice.key.split("-").slice(1).join("-")
       const lang = voice.language.code.replace(/_/g, "-")
-      const eventTypes = ["start", "end", "error"]
+      const eventTypes = ["start", "sentence", "end", "error"]
       const speakerNames = voice.speaker_id_map ? Object.keys(voice.speaker_id_map) : []
       if (speakerNames.length) {
         return speakerNames

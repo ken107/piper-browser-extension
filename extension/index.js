@@ -7,7 +7,7 @@ let speechId
 
 const domDispatcher = makeDispatcher("piper-host", {
   advertiseVoices({voices}, sender) {
-    chrome.ttsEngine.updateVoices(voices.map(voice => ({...voice, eventTypes: ["start", "sentence", "end", "error"]})))
+    chrome.ttsEngine.updateVoices(voices)
     piperService = sender
     notifyServiceWorker("piperServiceReady")
   },
@@ -16,9 +16,6 @@ const domDispatcher = makeDispatcher("piper-host", {
   },
   onSentence(args) {
     notifyServiceWorker("onSentence", {...args, speechId})
-  },
-  onParagraph(args) {
-    notifyServiceWorker("onParagraph", {...args, speechId})
   },
   onEnd(args) {
     notifyServiceWorker("onEnd", {...args, speechId})

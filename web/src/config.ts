@@ -6,6 +6,10 @@ export default {
   serviceUrl: "https://service.lsdsoftware.com",
   repoUrl: `https://huggingface.co/rhasspy/piper-voices/resolve/v${PIPER_VER}/`,
 
+  voiceList: {
+    file: "voices.json",
+    maxAge: 7*24*3600*1000
+  },
   excludeVoices: new Set([
     "vi_VN-vivos-x_low",
     "vi_VN-25hours_single-low",
@@ -43,6 +47,7 @@ export default {
     addEos: true,
   },
 
-  minPhonemesToPrefetch: 100,
+  phonemizeBatchSize: 1000,
+  numPhonemesToPrefetch: 100,
   paragraphSilenceSeconds: .75,
 }

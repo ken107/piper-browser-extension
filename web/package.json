@@ -11,18 +11,6 @@
     "type": "git",
     "url": "git+https://github.com/ken107/piper-browser-extension.git"
   },
-  "keywords": [
-    "text",
-    "to",
-    "speech",
-    "tts",
-    "voice",
-    "speech",
-    "synthesis",
-    "AI",
-    "neural",
-    "piper"
-  ],
   "author": "Hai Phan <hai.phan@gmail.com>",
   "license": "MIT",
   "bugs": {
