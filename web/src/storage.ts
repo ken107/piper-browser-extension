@@ -52,3 +52,7 @@ export async function deleteFile(name: string) {
 export function getStats() {
   return navigator.storage.estimate()
 }
+
+export function requestPersistence() {
+  return navigator.storage.persist()
+}

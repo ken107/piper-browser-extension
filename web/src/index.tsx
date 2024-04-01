@@ -3,6 +3,7 @@ import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
 import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
 import { makeSpeech } from "./speech"
+import * as storage from "./storage"
 import { makeSynthesizer } from "./synthesizer"
 import { MyVoice } from "./types"
 import { immediate } from "./utils"
@@ -302,6 +303,9 @@ function App() {
   }
 
   async function onInstall(voice: MyVoice, onProgress: (percent: number) => void) {
+    storage.requestPersistence()
+      .then(granted => console.info("Persistent storage:", granted))
+      .catch(console.error)
     try {
       stateUpdater(draft => {
         draft.voiceList!.find(x => x.key == voice.key)!.installState = "installing"
