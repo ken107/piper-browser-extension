@@ -61,3 +61,14 @@ export interface PcmData {
   readonly sampleRate: number
   readonly numChannels: number
 }
+
+export interface PlayAudio {
+  (pcmData: PcmData, appendSilenceSeconds: number): AudioPlaying
+}
+
+interface AudioPlaying {
+  readonly completePromise: Promise<void>
+  pause(): {
+    resume(): AudioPlaying
+  }
+}

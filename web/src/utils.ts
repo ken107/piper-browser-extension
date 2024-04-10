@@ -1,4 +1,5 @@
 import * as rxjs from "rxjs"
+import { PcmData } from "./types"
 
 export function immediate<T>(func: () => T) {
   return func()
@@ -86,6 +87,37 @@ export function makeBatchProcessor<T, V>(maxBatchSize: number, process: (items: 
       batch.items.push(item)
       batch.size += itemSize
       return () => batch.process().then(results => results[index])
+    }
+  }
+}
+
+export function makePcmConcatenator() {
+  const chunks = [] as {pcmData: PcmData, appendSilenceSamples: number}[]
+  return {
+    add(pcmData: PcmData, appendSilenceSeconds: number) {
+      chunks.push({
+        pcmData,
+        appendSilenceSamples: appendSilenceSeconds * pcmData.sampleRate * pcmData.numChannels
+      })
+    },
+    get(): PcmData|null {
+      if (chunks.length) {
+        const numSamples = chunks.reduce((sum, chunk) => sum + chunk.pcmData.samples.length + chunk.appendSilenceSamples, 0)
+        const samples = new Float32Array(numSamples)
+        let offset = 0
+        for (const chunk of chunks) {
+          samples.set(chunk.pcmData.samples, offset)
+          offset += chunk.pcmData.samples.length + chunk.appendSilenceSamples
+        }
+        return {
+          numChannels: chunks[0].pcmData.numChannels,
+          sampleRate: chunks[0].pcmData.sampleRate,
+          samples
+        }
+      }
+      else {
+        return null
+      }
     }
   }
 }

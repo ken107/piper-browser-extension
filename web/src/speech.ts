@@ -1,17 +1,14 @@
 import * as rxjs from "rxjs"
-import { playAudio } from "./audio"
 import config from "./config"
 import { Phrase } from "./phonemizer"
 import { makeSynthesizer } from "./synthesizer"
-import { PcmData } from "./types"
+import { PcmData, PlayAudio } from "./types"
 import { lazy, makeBatchProcessor, wait } from "./utils"
 
 interface SpeakOptions {
   readonly speakerId: number|undefined,
   readonly text: string,
-  readonly pitch: number|undefined,
-  readonly rate: number|undefined,
-  readonly volume: number|undefined
+  playAudio: PlayAudio
 }
 
 type Synthesizer = ReturnType<typeof makeSynthesizer>
@@ -252,7 +249,7 @@ async function playPhrase(
     const pcmData = await phrases[phraseIndex].getPcmData()
     await wait(playbackState, "resumed")
 
-    let playing = playAudio(pcmData, phrases[phraseIndex].silenceSeconds, opts.pitch, opts.rate, opts.volume)
+    let playing = opts.playAudio(pcmData, phrases[phraseIndex].silenceSeconds)
     try {
       while (await Promise.race([wait(playbackState, "paused"), playing.completePromise]) == "paused") {
         const paused = playing.pause()

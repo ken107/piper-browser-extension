@@ -1,15 +1,19 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
+import { WaveFile } from "wavefile"
+import { playAudio } from "./audio"
+import config from "./config"
 import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
 import { makeSpeech } from "./speech"
 import * as storage from "./storage"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice } from "./types"
-import { immediate } from "./utils"
+import { MyVoice, PlayAudio } from "./types"
+import { immediate, makePcmConcatenator } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
+const query = new URLSearchParams(location.search)
 const synthesizers = new Map<string, ReturnType<typeof makeSynthesizer>>()
 let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 
@@ -21,6 +25,10 @@ function App() {
     activityLog: "",
     isExpanded: {} as Record<string, boolean>,
     showInfoBox: false,
+    test: {
+      current: null as null|"speaking"|"synthesizing",
+      downloadUrl: null as string|null
+    }
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
@@ -55,6 +63,7 @@ function App() {
   React.useEffect(() => {
     messageDispatcher.updateHandlers({
       speak: onSpeak,
+      synthesize: onSynthesize,
       pause: onPause,
       resume: onResume,
       stop: onStop,
@@ -78,32 +87,48 @@ function App() {
           onClick={() => stateUpdater(draft => {draft.showInfoBox = true})}>What is Piper?</span>
       </div>
 
-      {top == self &&
+      {(query.has("showTest") ? query.get("showTest") != "0" : top == self) &&
         <div>
           <h2 className="text-muted">Test</h2>
-          <form onSubmit={onSubmitTest}>
-            <textarea className="form-control" rows={3} name="text" defaultValue="It is a period of civil war. Rebel spaceships, striking from a hidden base, have won their first victory against the evil Galactic Empire. During the battle, Rebel spies managed to steal secret plans to the Empire's ultimate weapon, the DEATH STAR, an armored space station with enough power to destroy an entire planet. Pursued by the Empire's sinister agents, Princess Leia races home aboard her starship, custodian of the stolen plans that can save her people and restore freedom to the galaxy..." />
+          <form>
+            <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
             <select className="form-control mt-3" name="voice">
               <option value="">Select a voice</option>
               {advertised?.map(voice =>
                 <option key={voice.voiceName} value={voice.voiceName}>{voice.voiceName}</option>
               )}
             </select>
-            <button type="submit" className="btn btn-primary mt-3">Speak</button>
-            {location.hostname == "localhost" &&
-              <>
-                <button type="button" className="btn btn-secondary mt-3 ms-1"
-                  onClick={() => onPause()}>Pause</button>
-                <button type="button" className="btn btn-secondary mt-3 ms-1"
-                  onClick={() => onResume()}>Resume</button>
-                <button type="button" className="btn btn-secondary mt-3 ms-1"
-                  onClick={() => onStop()}>Stop</button>
-                <button type="button" className="btn btn-secondary mt-3 ms-1"
-                  onClick={() => onForward()}>Forward</button>
-                <button type="button" className="btn btn-secondary mt-3 ms-1"
-                  onClick={() => onRewind()}>Rewind</button>
-              </>
-            }
+            <div className="d-flex align-items-center mt-3">
+              {state.test.current == null &&
+                <button type="button" className="btn btn-primary" onClick={onTestSpeak}>Speak</button>
+              }
+              {state.test.current == "speaking" &&
+                <button type="button" className="btn btn-primary" disabled>Speak</button>
+              }
+              {location.hostname == "localhost" && state.test.current == "speaking" &&
+                <>
+                  <button type="button" className="btn btn-secondary ms-1" onClick={onPause}>Pause</button>
+                  <button type="button" className="btn btn-secondary ms-1" onClick={onResume}>Resume</button>
+                  <button type="button" className="btn btn-secondary ms-1" onClick={onForward}>Forward</button>
+                  <button type="button" className="btn btn-secondary ms-1" onClick={onRewind}>Rewind</button>
+                </>
+              }
+              {state.test.current == null &&
+                <button type="button" className="btn btn-secondary ms-1" onClick={onTestSynthesize}>Download</button>
+              }
+              {state.test.current == "synthesizing" &&
+                <button type="button" className="btn btn-secondary ms-1" disabled>
+                  Synthesizing...
+                  <span className="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true" />
+                </button>
+              }
+              {state.test.current &&
+                <button type="button" className="btn btn-secondary ms-1" onClick={onStopTest}>Stop</button>
+              }
+              {state.test.downloadUrl &&
+                <audio src={state.test.downloadUrl} controls className="ms-1" />
+              }
+            </div>
           </form>
         </div>
       }
@@ -337,9 +362,12 @@ function App() {
     }
   }
 
-  async function onSpeak({utterance, voiceName, pitch, rate, volume}: Record<string, unknown>, sender: {send(message: unknown): void}) {
+  function onSpeak(
+    {text, voiceName, pitch, rate, volume}: Record<string, unknown>,
+    sender: {send(message: unknown): void}
+  ) {
     if (!(
-      typeof utterance == "string" &&
+      typeof text == "string" &&
       typeof voiceName == "string" &&
       (typeof pitch == "number" || typeof pitch == "undefined") &&
       (typeof rate == "number" || typeof rate == "undefined") &&
@@ -347,7 +375,64 @@ function App() {
     )) {
       throw new Error("Bad args")
     }
+    speak({
+      text,
+      voiceName,
+      playAudio(pcmData, appendSilenceSeconds) {
+        return playAudio(pcmData, appendSilenceSeconds, pitch, rate, volume)
+      },
+      callback(method, args) {
+        sender.send({to: "piper-host", type: "notification", method, args})
+      }
+    })
+  }
 
+  function onSynthesize(
+    {text, voiceName, pitch}: Record<string, unknown>,
+    sender: {send(message: unknown): void}
+  ) {
+    if (!(
+      typeof text == "string" &&
+      typeof voiceName == "string" &&
+      (typeof pitch == "number" || typeof pitch == "undefined")
+    )) {
+      throw new Error("Bad args")
+    }
+    const concat = makePcmConcatenator()
+    speak({
+      text,
+      voiceName,
+      playAudio(pcmData, appendSilenceSeconds) {
+        concat.add(pcmData, appendSilenceSeconds)
+        const playing = {
+          completePromise: Promise.resolve(),
+          pause: () => ({resume: () => playing})
+        }
+        return playing
+      },
+      callback(method, args) {
+        if (method == "onEnd") {
+          const pcmData = concat.get()
+          if (pcmData) {
+            const waveFile = new WaveFile()
+            waveFile.fromScratch(pcmData.numChannels, pcmData.sampleRate, "32f", pcmData.samples)
+            args = {
+              ...args,
+              audioBlob: new Blob([waveFile.toBuffer()], {type: "audio/wav"})
+            }
+          }
+        }
+        sender.send({to: "piper-host", type: "notification", method, args})
+      }
+    })
+  }
+
+  function speak({text, voiceName, playAudio, callback}: {
+    text: string,
+    voiceName: string,
+    playAudio: PlayAudio,
+    callback(method: string, args?: Record<string, unknown>): void
+  }) {
     const {modelId, speakerName} = parseAdvertisedVoiceName(voiceName)
     const voice = state.voiceList!.find(({key}) => key.endsWith('-' + modelId))
     if (!voice) throw new Error("Voice not found")
@@ -359,7 +444,7 @@ function App() {
       }
     })
 
-    appendActivityLog(`Speaking '${utterance.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
+    appendActivityLog(`Synthesizing '${text.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
 
     const synth = synthesizers.get(voice.key) ?? immediate(() => {
       appendActivityLog(`Initializing ${voice.name} [${voice.quality}], please wait...`)
@@ -369,14 +454,14 @@ function App() {
     })
 
     currentSpeech?.cancel()
-    const speech = currentSpeech = makeSpeech(synth, {speakerId, text: utterance, pitch, rate, volume}, {
+    const speech = currentSpeech = makeSpeech(synth, {speakerId, text, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
       }
     })
     function notifyCaller(method: string, args?: Record<string, unknown>) {
       if (speech == currentSpeech)
-        sender.send({to: "piper-host", type: "notification", method, args})
+        callback(method, args)
     }
 
     immediate(async () => {
@@ -447,13 +532,54 @@ function App() {
     currentSpeech?.rewind()
   }
 
-  function onSubmitTest(event: React.FormEvent) {
-    event.preventDefault()
-    const form = event.target as any
-    if (form.text.value && form.voice.value) {
-      onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {send: console.log})
-        .catch(reportError)
+  function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {
+    const form = (event.target as HTMLButtonElement).form
+    if (form?.text.value && form.voice.value) {
+      if (state.test.downloadUrl) URL.revokeObjectURL(state.test.downloadUrl)
+      stateUpdater(draft => {
+        draft.test.downloadUrl = null
+        draft.test.current = "speaking"
+      })
+      onSpeak({text: form.text.value, voiceName: form.voice.value}, {
+        send({method, args}: {method: string, args?: Record<string, unknown>}) {
+          console.log(method, args)
+          if (method == "onEnd") {
+            stateUpdater(draft => {
+              draft.test.current = null
+            })
+          }
+        }
+      })
     }
+  }
+
+  function onTestSynthesize(event: React.MouseEvent<HTMLButtonElement>) {
+    const form = (event.target as HTMLButtonElement).form
+    if (form?.text.value && form.voice.value) {
+      if (state.test.downloadUrl) URL.revokeObjectURL(state.test.downloadUrl)
+      stateUpdater(draft => {
+        draft.test.downloadUrl = null
+        draft.test.current = "synthesizing"
+      })
+      onSynthesize({text: form.text.value, voiceName: form.voice.value}, {
+        send({method, args}: {method: string, args?: Record<string, unknown>}) {
+          console.log(method, args)
+          if (method == "onEnd") {
+            stateUpdater(draft => {
+              draft.test.current = null
+              if (args?.audioBlob instanceof Blob) draft.test.downloadUrl = URL.createObjectURL(args.audioBlob)
+            })
+          }
+        }
+      })
+    }
+  }
+
+  function onStopTest() {
+    onStop()
+    stateUpdater(draft => {
+      draft.test.current = null
+    })
   }
 }
 
