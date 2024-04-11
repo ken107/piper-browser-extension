@@ -79,7 +79,7 @@ export async function deleteVoice(voiceKey: string) {
 
 
 export function advertiseVoices(voices: readonly AdvertisedVoice[]) {
-  top?.postMessage(<Message>{
+  parent?.postMessage(<Message>{
     type: "notification",
     to: "piper-host",
     method: "advertiseVoices",

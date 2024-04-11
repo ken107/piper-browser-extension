@@ -363,11 +363,11 @@ function App() {
   }
 
   function onSpeak(
-    {text, voiceName, pitch, rate, volume}: Record<string, unknown>,
+    {utterance, voiceName, pitch, rate, volume}: Record<string, unknown>,
     sender: {send(message: unknown): void}
   ) {
     if (!(
-      typeof text == "string" &&
+      typeof utterance == "string" &&
       typeof voiceName == "string" &&
       (typeof pitch == "number" || typeof pitch == "undefined") &&
       (typeof rate == "number" || typeof rate == "undefined") &&
@@ -376,7 +376,7 @@ function App() {
       throw new Error("Bad args")
     }
     speak({
-      text,
+      text: utterance,
       voiceName,
       playAudio(pcmData, appendSilenceSeconds) {
         return playAudio(pcmData, appendSilenceSeconds, pitch, rate, volume)
@@ -540,7 +540,7 @@ function App() {
         draft.test.downloadUrl = null
         draft.test.current = "speaking"
       })
-      onSpeak({text: form.text.value, voiceName: form.voice.value}, {
+      onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
         send({method, args}: {method: string, args?: Record<string, unknown>}) {
           console.log(method, args)
           if (method == "onEnd") {
