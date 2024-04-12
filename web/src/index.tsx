@@ -1,15 +1,14 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
-import { WaveFile } from "wavefile"
 import { playAudio } from "./audio"
 import config from "./config"
 import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
 import { makeSpeech } from "./speech"
 import * as storage from "./storage"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice, PlayAudio } from "./types"
-import { immediate, makePcmConcatenator } from "./utils"
+import { MyVoice, PcmData, PlayAudio } from "./types"
+import { immediate, makeWav } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -398,12 +397,12 @@ function App() {
     )) {
       throw new Error("Bad args")
     }
-    const concat = makePcmConcatenator()
+    const chunks = [] as Array<{pcmData: PcmData, appendSilenceSeconds: number}>
     speak({
       text,
       voiceName,
       playAudio(pcmData, appendSilenceSeconds) {
-        concat.add(pcmData, appendSilenceSeconds)
+        chunks.push({pcmData, appendSilenceSeconds})
         const playing = {
           completePromise: Promise.resolve(),
           pause: () => ({resume: () => playing})
@@ -411,17 +410,7 @@ function App() {
         return playing
       },
       callback(method, args) {
-        if (method == "onEnd") {
-          const pcmData = concat.get()
-          if (pcmData) {
-            const waveFile = new WaveFile()
-            waveFile.fromScratch(pcmData.numChannels, pcmData.sampleRate, "32f", pcmData.samples)
-            args = {
-              ...args,
-              audioBlob: new Blob([waveFile.toBuffer()], {type: "audio/wav"})
-            }
-          }
-        }
+        if (method == "onEnd") args = {...args, audioBlob: makeWav(chunks)}
         sender.send({to: "piper-host", type: "notification", method, args})
       }
     })

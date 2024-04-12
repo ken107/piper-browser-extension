@@ -91,33 +91,59 @@ export function makeBatchProcessor<T, V>(maxBatchSize: number, process: (items: 
   }
 }
 
-export function makePcmConcatenator() {
-  const chunks = [] as {pcmData: PcmData, appendSilenceSamples: number}[]
-  return {
-    add(pcmData: PcmData, appendSilenceSeconds: number) {
-      chunks.push({
-        pcmData,
-        appendSilenceSamples: appendSilenceSeconds * pcmData.sampleRate * pcmData.numChannels
-      })
-    },
-    get(): PcmData|null {
-      if (chunks.length) {
-        const numSamples = chunks.reduce((sum, chunk) => sum + chunk.pcmData.samples.length + chunk.appendSilenceSamples, 0)
-        const samples = new Float32Array(numSamples)
-        let offset = 0
-        for (const chunk of chunks) {
-          samples.set(chunk.pcmData.samples, offset)
-          offset += chunk.pcmData.samples.length + chunk.appendSilenceSamples
-        }
-        return {
-          numChannels: chunks[0].pcmData.numChannels,
-          sampleRate: chunks[0].pcmData.sampleRate,
-          samples
-        }
-      }
-      else {
-        return null
-      }
+export function makeWav(chunks: Array<{pcmData: PcmData, appendSilenceSeconds: number}>): Blob {
+  const numChannels = chunks.length ? chunks[0].pcmData.numChannels : 2
+  const sampleRate = chunks.length ? chunks[0].pcmData.sampleRate : 44100
+
+  //normalize, convert, concatenate
+  let numSamples = 0
+  let peak = 0
+  for (const {pcmData, appendSilenceSeconds} of chunks) {
+    numSamples += pcmData.samples.length + (appendSilenceSeconds * pcmData.sampleRate * pcmData.numChannels)
+    for (const s of pcmData.samples) {
+      if (s > peak) peak = s
+      else if (-s > peak) peak = -s
     }
   }
+
+  const factor = 1 / Math.max(.01, peak)
+  const samples = new Int16Array(numSamples)
+  let offset = 0
+  for (const {pcmData, appendSilenceSeconds} of chunks) {
+    for (const s of pcmData.samples) {
+      samples[offset++] = s * factor * (s < 0 ? 32768 : 32767)
+    }
+    offset += (appendSilenceSeconds * pcmData.sampleRate * pcmData.numChannels)
+  }
+
+  //WAV header
+  const bytesPerSample = 2
+  const blockAlign = numChannels * bytesPerSample
+  const byteRate = sampleRate * blockAlign
+  const dataSize = numSamples * blockAlign
+
+  const header = new ArrayBuffer(44)
+  const view = new DataView(header)
+
+  function writeString(offset: number, string: string) {
+    for (let i = 0; i < string.length; i++)
+      view.setUint8(offset + i, string.charCodeAt(i))
+  }
+
+  writeString(0, 'RIFF')
+  view.setUint32(4, dataSize + 36, true)
+  writeString(8, 'WAVE')
+  writeString(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, byteRate, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, bytesPerSample * 8, true)
+  writeString(36, 'data')
+  view.setUint32(40, dataSize, true)
+
+  //WAV blob
+  return new Blob([header, samples], {type: "audio/wav"})
 }
