@@ -472,7 +472,7 @@ function App() {
           stateUpdater(draft => {
             draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
           })
-          notifyCaller("onStart")
+          notifyCaller("onStart", {sentenceStartIndicies: speech.sentenceStartIndicies})
           await speech.play()
           notifyCaller("onEnd")
         }

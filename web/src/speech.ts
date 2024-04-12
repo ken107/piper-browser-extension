@@ -42,9 +42,11 @@ export function makeSpeech(
     onSentence(startIndex: number, endIndex: number): void
   }
 ) {
-  const playlist = makePlaylist(synth, opts, callbacks)
+  const sentences = makeSentences(synth, opts)
+  const playlist = makePlaylist(sentences, opts, callbacks)
   const control = new rxjs.Subject<"pause"|"resume"|"next"|"forward"|"rewind">()
   return {
+    sentenceStartIndicies: sentences.map(sentence => sentence.startIndex),
     play: lazy(() => new Promise<void>((fulfill, reject) => {
       control
         .pipe(
@@ -95,13 +97,12 @@ export function makeSpeech(
 
 
 function makePlaylist(
-  synth: Synthesizer,
+  sentences: Sentence[],
   opts: SpeakOptions,
   callbacks: {
     onSentence(startIndex: number, endIndex: number): void
   }
 ) {
-  const sentences = makeSentences(synth, opts)
   let sentenceIndex = 0
   let phraseIndex = -1
 
