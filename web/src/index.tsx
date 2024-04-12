@@ -68,6 +68,7 @@ function App() {
       stop: onStop,
       forward: onForward,
       rewind: onRewind,
+      seek: onSeek,
     })
   })
 
@@ -110,6 +111,8 @@ function App() {
                   <button type="button" className="btn btn-secondary ms-1" onClick={onResume}>Resume</button>
                   <button type="button" className="btn btn-secondary ms-1" onClick={onForward}>Forward</button>
                   <button type="button" className="btn btn-secondary ms-1" onClick={onRewind}>Rewind</button>
+                  <button type="button" className="btn btn-secondary ms-1"
+                    onClick={() => onSeek({index: Number(prompt())})}>Seek</button>
                 </>
               }
               {state.test.current == null &&
@@ -519,6 +522,11 @@ function App() {
 
   function onRewind() {
     currentSpeech?.rewind()
+  }
+
+  function onSeek({index}: Record<string, unknown>) {
+    if (typeof index != "number") throw new Error("Bad args")
+    currentSpeech?.seek(index)
   }
 
   function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {

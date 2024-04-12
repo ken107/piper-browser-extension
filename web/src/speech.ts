@@ -44,7 +44,7 @@ export function makeSpeech(
 ) {
   const sentences = makeSentences(synth, opts)
   const playlist = makePlaylist(sentences, opts, callbacks)
-  const control = new rxjs.Subject<"pause"|"resume"|"next"|"forward"|"rewind">()
+  const control = new rxjs.Subject<"pause"|"resume"|"next"|"forward"|"rewind"|number>()
   return {
     sentenceStartIndicies: sentences.map(sentence => sentence.startIndex),
     play: lazy(() => new Promise<void>((fulfill, reject) => {
@@ -58,6 +58,7 @@ export function makeSpeech(
               case "next": return playlist.next()
               case "forward": return playlist.forward(current.isPaused()) ?? current
               case "rewind": return playlist.rewind(current.isPaused()) ?? current
+              default: return playlist.seek(cmd, current.isPaused()) ?? current
             }
           }, null!),
           rxjs.distinctUntilChanged(),
@@ -91,6 +92,9 @@ export function makeSpeech(
     },
     rewind() {
       control.next("rewind")
+    },
+    seek(index: number) {
+      control.next(index)
     }
   }
 }
@@ -155,6 +159,17 @@ function makePlaylist(
           callbacks.onSentence(sentences[sentenceIndex].startIndex, sentences[sentenceIndex].endIndex)
           await new Promise<void>(f => setTimeout(f, 750))
           await wait(playbackState, "resumed")
+          await playPhrase(opts, sentences, sentenceIndex, phraseIndex, playbackState)
+        }, isPaused)
+      }
+    },
+
+    seek(index: number, isPaused: boolean): Playing|undefined {
+      if (index >= 0 && index < sentences.length) {
+        return makePlaying(async playbackState => {
+          sentenceIndex = index
+          phraseIndex = 0
+          callbacks.onSentence(sentences[sentenceIndex].startIndex, sentences[sentenceIndex].endIndex)
           await playPhrase(opts, sentences, sentenceIndex, phraseIndex, playbackState)
         }, isPaused)
       }
