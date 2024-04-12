@@ -25,7 +25,7 @@ function App() {
     isExpanded: {} as Record<string, boolean>,
     showInfoBox: false,
     test: {
-      current: null as null|"speaking"|"synthesizing",
+      current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
       downloadUrl: null as string|null
     }
   })
@@ -102,10 +102,10 @@ function App() {
               {state.test.current == null &&
                 <button type="button" className="btn btn-primary" onClick={onTestSpeak}>Speak</button>
               }
-              {state.test.current == "speaking" &&
+              {state.test.current?.type == "speaking" &&
                 <button type="button" className="btn btn-primary" disabled>Speak</button>
               }
-              {location.hostname == "localhost" && state.test.current == "speaking" &&
+              {location.hostname == "localhost" && state.test.current?.type == "speaking" &&
                 <>
                   <button type="button" className="btn btn-secondary ms-1" onClick={onPause}>Pause</button>
                   <button type="button" className="btn btn-secondary ms-1" onClick={onResume}>Resume</button>
@@ -118,11 +118,8 @@ function App() {
               {state.test.current == null &&
                 <button type="button" className="btn btn-secondary ms-1" onClick={onTestSynthesize}>Download</button>
               }
-              {state.test.current == "synthesizing" &&
-                <button type="button" className="btn btn-secondary ms-1" disabled>
-                  Synthesizing...
-                  <span className="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true" />
-                </button>
+              {state.test.current?.type == "synthesizing" &&
+                <button type="button" className="btn btn-secondary ms-1" disabled>{state.test.current.percent}%</button>
               }
               {state.test.current &&
                 <button type="button" className="btn btn-secondary ms-1" onClick={onStopTest}>Stop</button>
@@ -535,7 +532,7 @@ function App() {
       if (state.test.downloadUrl) URL.revokeObjectURL(state.test.downloadUrl)
       stateUpdater(draft => {
         draft.test.downloadUrl = null
-        draft.test.current = "speaking"
+        draft.test.current = {type: "speaking"}
       })
       onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
         send({method, args}: {method: string, args?: Record<string, unknown>}) {
@@ -551,20 +548,28 @@ function App() {
   }
 
   function onTestSynthesize(event: React.MouseEvent<HTMLButtonElement>) {
-    const form = (event.target as HTMLButtonElement).form
-    if (form?.text.value && form.voice.value) {
+    const form = (event.target as HTMLButtonElement).form!
+    const text = form.text.value
+    const voiceName = form.voice.value
+    if (text && voiceName) {
       if (state.test.downloadUrl) URL.revokeObjectURL(state.test.downloadUrl)
       stateUpdater(draft => {
         draft.test.downloadUrl = null
-        draft.test.current = "synthesizing"
+        draft.test.current = {type: "synthesizing", percent: 0}
       })
-      onSynthesize({text: form.text.value, voiceName: form.voice.value}, {
+      onSynthesize({text, voiceName}, {
         send({method, args}: {method: string, args?: Record<string, unknown>}) {
           console.log(method, args)
           if (method == "onEnd") {
             stateUpdater(draft => {
               draft.test.current = null
               if (args?.audioBlob instanceof Blob) draft.test.downloadUrl = URL.createObjectURL(args.audioBlob)
+            })
+          }
+          else if (method == "onSentence") {
+            stateUpdater(draft => {
+              if (draft.test.current?.type == "synthesizing" && typeof args?.startIndex == "number")
+                draft.test.current.percent = Math.round(100 * args.startIndex / text.length)
             })
           }
         }
