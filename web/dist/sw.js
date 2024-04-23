@@ -5,11 +5,11 @@
 //any intermediary network caches)
 
 const myCache = {
-  'app-v10': [
-    '/?v=10',
-    '/index.html?v=10',
-    '/bundle.js?v=10',
-    '/inference-worker.js?v=10',
+  'app-v11': [
+    '/?v=11',
+    '/index.html?v=11',
+    '/bundle.js?v=11',
+    '/inference-worker.js?v=11',
   ],
   'bootstrap-v1': [
     '/bootstrap.min.css?v=1',
