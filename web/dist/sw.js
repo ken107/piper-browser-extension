@@ -14,8 +14,8 @@ const myCache = {
   'bootstrap-v1': [
     '/bootstrap.min.css?v=1',
   ],
-  'wasm-v1': [
-    '/ort-wasm-simd-threaded.wasm?v=1',
+  'wasm-v2': [
+    '/ort-wasm-simd-threaded.wasm?v=2',
   ]
 }
 
