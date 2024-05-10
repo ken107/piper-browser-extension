@@ -193,8 +193,12 @@ function makeSentences(
   const tokens = opts.text.split(/([.?!۔؟]\s+|[\n׃。．။།।॥]\s*)/)
 
   const sentences = []
-  for (let i = 0; i < tokens.length; i += 2)
-    sentences.push(tokens[i] + (tokens[i+1] ?? ''))
+  for (let i = 0; i < tokens.length; i += 2) {
+    if (/\b(\w|[A-Z][a-z]|Dept|[Ee]tc|Gov|Inc|Ltd|Mrs|Rev|Sra|vs)\.\s+$/.test(sentences[sentences.length-1]))
+      sentences[sentences.length-1] += tokens[i] + (tokens[i+1] ?? '')
+    else
+      sentences.push(tokens[i] + (tokens[i+1] ?? ''))
+  }
 
   const indices = [0]
   for (let i = 0; i < sentences.length; i++)
