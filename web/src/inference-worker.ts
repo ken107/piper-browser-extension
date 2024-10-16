@@ -1,9 +1,10 @@
-import * as ort from "onnxruntime-web"
+import * as ort from "onnxruntime-web/wasm"
 import { ModelConfig, PcmData } from "./types"
 import config from "./config"
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/"
 
 
 class TransferableResult {

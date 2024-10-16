@@ -5,17 +5,17 @@
 //any intermediary network caches)
 
 const myCache = {
-  'app-v12': [
-    '/?v=12',
-    '/index.html?v=12',
-    '/bundle.js?v=12',
-    '/inference-worker.js?v=12',
+  'app-v13': [
+    '/?v=13',
+    '/index.html?v=13',
+    '/bundle.js?v=13',
+    '/inference-worker.js?v=13',
   ],
   'bootstrap-v1': [
     '/bootstrap.min.css?v=1',
   ],
-  'wasm-v2': [
-    '/ort-wasm-simd-threaded.wasm?v=2',
+  'ort-1.17.3': [
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort-wasm-simd-threaded.wasm',
   ]
 }
 

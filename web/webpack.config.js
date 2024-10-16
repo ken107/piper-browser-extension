@@ -33,8 +33,6 @@ module.exports = (env, argv) => ({
     new CopyPlugin({
       patterns: [
         'dist',
-        { from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', to: '[name][ext]' },
-        { from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd.wasm', to: '[name][ext]' },
       ]
     }),
     ...(env.analyze ? [new BundleAnalyzerPlugin()] : [])

@@ -5,7 +5,7 @@
     "target": "es6",
     "jsx": "react",
     "allowJs": false,
-    "moduleResolution": "node"
+    "moduleResolution": "Bundler"
   },
   "include": [
     "src/**/*"
