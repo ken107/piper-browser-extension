@@ -369,7 +369,7 @@ function App() {
   }
 
   function onSpeak(
-    {utterance, voiceName, pitch, rate, volume}: Record<string, unknown>,
+    {utterance, voiceName, pitch, rate, volume, externalPlayback}: Record<string, unknown>,
     sender: {send(message: unknown): void}
   ) {
     if (!(
@@ -377,7 +377,8 @@ function App() {
       typeof voiceName == "string" &&
       (typeof pitch == "number" || typeof pitch == "undefined") &&
       (typeof rate == "number" || typeof rate == "undefined") &&
-      (typeof volume == "number" || typeof volume == "undefined")
+      (typeof volume == "number" || typeof volume == "undefined") &&
+      (typeof externalPlayback == "boolean" || typeof externalPlayback == "undefined")
     )) {
       throw new Error("Bad args")
     }
@@ -385,7 +386,26 @@ function App() {
       text: utterance,
       voiceName,
       playAudio(pcmData, appendSilenceSeconds) {
-        return playAudio(pcmData, appendSilenceSeconds, pitch, rate, volume)
+        if (externalPlayback) {
+          const wav = makeWav([{pcmData, appendSilenceSeconds}])
+          const id = String(Math.random())
+          sender.send({to: "piper-host", type: "request", id, method: "audioPlay", args: {src: wav, rate, volume}})
+          const playing = {
+            completePromise: messageDispatcher.waitForResponse<void>(id),
+            pause() {
+              sender.send({to:"piper-host", type: "notification", method: "audioPause"})
+              return {
+                resume() {
+                  sender.send({to: "piper-host", type: "notification", method: "audioResume"})
+                  return playing
+                }
+              }
+            }
+          }
+          return playing
+        } else {
+          return playAudio(pcmData, appendSilenceSeconds, pitch, rate, volume)
+        }
       },
       callback(method, args) {
         sender.send({to: "piper-host", type: "notification", method, args})
