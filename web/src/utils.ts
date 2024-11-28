@@ -91,15 +91,19 @@ export function makeBatchProcessor<T, V>(maxBatchSize: number, process: (items: 
   }
 }
 
-export function makeWav(chunks: Array<{pcmData: PcmData, appendSilenceSeconds: number}>): Blob {
+export function makeWav(_chunks: Array<{pcmData: PcmData, appendSilenceSeconds: number}>): Blob {
+  const chunks = _chunks.map(({pcmData, appendSilenceSeconds}) => ({
+    pcmData,
+    appendSilenceSamples: Math.floor(appendSilenceSeconds * pcmData.sampleRate * pcmData.numChannels) >> 1 << 1
+  }))
   const numChannels = chunks.length ? chunks[0].pcmData.numChannels : 2
   const sampleRate = chunks.length ? chunks[0].pcmData.sampleRate : 44100
 
   //normalize, convert, concatenate
   let numSamples = 0
   let peak = 0
-  for (const {pcmData, appendSilenceSeconds} of chunks) {
-    numSamples += pcmData.samples.length + (appendSilenceSeconds * pcmData.sampleRate * pcmData.numChannels)
+  for (const {pcmData, appendSilenceSamples} of chunks) {
+    numSamples += pcmData.samples.length + appendSilenceSamples
     for (const s of pcmData.samples) {
       if (s > peak) peak = s
       else if (-s > peak) peak = -s
@@ -109,11 +113,11 @@ export function makeWav(chunks: Array<{pcmData: PcmData, appendSilenceSeconds: n
   const factor = 1 / Math.max(.01, peak)
   const samples = new Int16Array(numSamples)
   let offset = 0
-  for (const {pcmData, appendSilenceSeconds} of chunks) {
+  for (const {pcmData, appendSilenceSamples} of chunks) {
     for (const s of pcmData.samples) {
       samples[offset++] = s * factor * (s < 0 ? 32768 : 32767)
     }
-    offset += (appendSilenceSeconds * pcmData.sampleRate * pcmData.numChannels)
+    offset += appendSilenceSamples
   }
 
   //WAV header
