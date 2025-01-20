@@ -1,48 +1,31 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import { getInstalledVoice } from "./services"
-import { PcmData } from "./types"
+import * as rxjs from "rxjs"
+import { ModelStatus, PcmData, Voice } from "./types"
 import { immediate } from "./utils"
-import { makePhonemizer } from "./phonemizer"
 
+export const modelStatus$ = new rxjs.BehaviorSubject<ModelStatus>({status: "unloaded"})
 
 const worker = immediate(() => {
-  const worker = new Worker("inference-worker.js")
-  const dispatcher = makeDispatcher("piper-service", {})
+  const worker = new Worker(new URL("./inference-worker.ts", import.meta.url), {type: "module"})
+  const dispatcher = makeDispatcher("tts-service", {
+    onModelStatus(args) {
+      modelStatus$.next(args as ModelStatus)
+    }
+  })
   worker.addEventListener("message", event => dispatcher.dispatch(event.data, null, worker.postMessage))
   return {
     request<T>(method: string, args: Record<string, unknown>) {
       const id = String(Math.random())
-      worker.postMessage({to: "piper-worker", type: "request", id, method, args})
+      worker.postMessage({to: "tts-worker", type: "request", id, method, args})
       return dispatcher.waitForResponse<T>(id)
     }
   }
 })
 
+export function getVoiceList() {
+  return worker.request<Voice[]>("getVoiceList", {})
+}
 
-export function makeSynthesizer(voiceKey: string) {
-  const modelPromise = getInstalledVoice(voiceKey)
-  const readyPromise = modelPromise
-    .then(({model, modelConfig}) => worker.request("makeInferenceEngine", {model, modelConfig}))
-  return {
-    readyPromise,
-    phonemizerPromise: modelPromise.then(({modelConfig}) => makePhonemizer(modelConfig)),
-    async synthesize(
-      {phonemes, phonemeIds}: {phonemes: string[], phonemeIds: number[]},
-      speakerId: number|undefined
-    ) {
-      const engineId = await readyPromise
-      const start = Date.now()
-      try {
-        return await worker.request<PcmData>("infer", {engineId, phonemeIds, speakerId})
-      }
-      finally {
-        console.debug("Synthesized", phonemes.length, "in", Date.now()-start, phonemes.join(""))
-      }
-    },
-    dispose() {
-      readyPromise
-        .then(engineId => worker.request("dispose", {engineId}))
-        .catch(console.error)
-    }
-  }
+export function synthesize(text: string, voiceId: string) {
+  return worker.request<PcmData>("synthesize", {text, voiceId})
 }

@@ -1,210 +1,45 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import config from "./config"
-import { deleteFile, getFile, putFile } from "./storage"
-import { AdvertisedVoice, InstallState, LoadState, ModelConfig, MyVoice, PiperVoice } from "./types"
-import { fetchWithProgress, immediate } from "./utils"
-
-
-export async function getVoiceList(): Promise<MyVoice[]> {
-  const blob = await getFile(config.voiceList.file, () => piperFetch("voices.json"))
-  if (blob instanceof File && Date.now()-blob.lastModified > config.voiceList.maxAge) {
-    console.log("Refreshing voice list")
-    piperFetch("voices.json")
-      .then(blob => putFile(config.voiceList.file, blob))
-      .catch(console.error)
-  }
-  const voicesJson: Record<string, PiperVoice> = await blob.text().then(JSON.parse)
-  const voiceList = Object.values(voicesJson)
-    .filter(voice => !config.excludeVoices.has(voice.key))
-    .map(voice => {
-      const modelFile = Object.keys(voice.files).find(x => x.endsWith(".onnx"))
-      if (!modelFile) throw new Error("Can't identify model file for " + voice.name)
-      const speakerList = Object.entries(voice.speaker_id_map ?? {})
-        .map(([name, id]) => ({name, id, tokens: name.split(/(\d+)/)}))
-        .sort((a, b) => {
-          for (let i = 0; i < Math.min(a.tokens.length, b.tokens.length); i++) {
-            const dif = i % 2 == 0 ? a.tokens[i].localeCompare(b.tokens[i]) : Number(a.tokens[i]) - Number(b.tokens[i])
-            if (dif != 0) return dif
-          }
-          return a.tokens.length - b.tokens.length
-        })
-        .map(({name, id}) => ({speakerName: name, speakerId: id}))
-      return {
-        ...voice,
-        speakerList,
-        modelFile,
-        modelFileSize: voice.files[modelFile].size_bytes,
-        installState: "not-installed" as InstallState,
-        loadState: "not-loaded" as LoadState,
-        numActiveUsers: 0,
-      }
-    })
-  for (const voice of voiceList) {
-    voice.installState = await getFile(voice.key + ".onnx")
-      .then(() => "installed" as const)
-      .catch(err => "not-installed")
-  }
-  return voiceList
-}
-
-
-export async function getInstalledVoice(voiceKey: string) {
-  const [model, modelConfig] = await Promise.all([
-    getFile(voiceKey + ".onnx"),
-    getFile(voiceKey + ".json")
-  ])
-  return {
-    model,
-    modelConfig: JSON.parse(await modelConfig.text()) as ModelConfig
-  }
-}
-
-
-export async function installVoice(voice: MyVoice, onProgress: (percent: number) => void) {
-  const [model, modelConfig] = await Promise.all([
-    getFile(voice.key + ".onnx", () => piperFetch(voice.modelFile, onProgress)),
-    getFile(voice.key + ".json", () => piperFetch(voice.modelFile + ".json"))
-  ])
-  return {
-    model,
-    modelConfig: JSON.parse(await modelConfig.text()) as ModelConfig
-  }
-}
-
-
-export async function deleteVoice(voiceKey: string) {
-  await deleteFile(voiceKey + ".onnx")
-  await deleteFile(voiceKey + ".json")
-}
+import { getVoiceList } from "./synthesizer"
+import { AdvertisedVoice } from "./types"
+import { immediate } from "./utils"
 
 
 export function advertiseVoices(voices: readonly AdvertisedVoice[]) {
   parent?.postMessage(<Message>{
     type: "notification",
-    to: "piper-host",
+    to: "tts-host",
     method: "advertiseVoices",
     args: {voices}
   }, "*")
 }
 
 
-export function makeAdvertisedVoiceList(voiceList: readonly MyVoice[]|null): AdvertisedVoice[]|null {
-  if (voiceList == null) return null
+export async function makeAdvertisedVoiceList(): Promise<AdvertisedVoice[]> {
+  const voiceList = await getVoiceList()
   return voiceList
-    .filter(x => x.installState == "installed")
-    .flatMap<AdvertisedVoice>(voice => {
-      const modelId = voice.key.split("-").slice(1).join("-")
-      const lang = voice.language.code.replace(/_/g, "-")
-      const eventTypes = ["start", "sentence", "end", "error"]
-      const speakerNames = voice.speaker_id_map ? Object.keys(voice.speaker_id_map) : []
-      if (speakerNames.length) {
-        return speakerNames
-          .map<AdvertisedVoice>(speakerName => ({
-            voiceName: `Piper ${modelId} ${speakerName} (${voice.language.name_native})`,
-            lang,
-            eventTypes
-          }))
-      }
-      else {
-        return {
-          voiceName: `Piper ${modelId} (${voice.language.name_native})`,
-          lang,
-          eventTypes
-        }
-      }
-    })
+    .map(({id, name, language, gender}) => ({
+      voiceName: `Kokoro ${id} (${config.langNameMap[language] || language})`,
+      lang: language,
+      eventTypes: ["start", "sentence", "end", "error"]
+    }))
     .sort((a, b) => a.lang.localeCompare(b.lang) || a.voiceName.localeCompare(b.voiceName))
 }
 
 
-export function parseAdvertisedVoiceName(name: string): {modelId: string, speakerName?: string} {
-  const [piper, modelId, speakerName] = name.split(" ")
+export function parseAdvertisedVoiceName(name: string): {voiceId: string} {
+  const [kokoro, voiceId] = name.split(" ")
   return {
-    modelId,
-    speakerName: speakerName.startsWith("(") ? undefined : speakerName
-  }
-}
-
-
-export const sampler = immediate(() => {
-  const audio = new Audio()
-  audio.crossOrigin = "anonymous"
-  audio.autoplay = true
-  return {
-    play(voice: MyVoice, speakerId?: number) {
-      const tokens = voice.modelFile.split("/")
-      tokens.pop()
-      audio.src = config.repoUrl + tokens.join("/") + "/samples/speaker_" + (speakerId ?? 0) + ".mp3"
-    },
-    stop() {
-      audio.pause()
-    }
-  }
-})
-
-
-export async function piperFetch(file: string, onProgress?: (percent: number) => void) {
-  if (onProgress) {
-    return fetchWithProgress(config.repoUrl + file, onProgress)
-  }
-  else {
-    const res = await fetch(config.repoUrl + file)
-    if (!res.ok) throw new Error("Server return " + res.status)
-    return res.blob()
+    voiceId
   }
 }
 
 
 export const messageDispatcher = immediate(() => {
-  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("piper-service", {})
+  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("tts-service", {})
   addEventListener("message", event => {
     const send = (msg: unknown) => event.source!.postMessage(msg, {targetOrigin: event.origin})
     dispatcher.dispatch(event.data, {send}, send)
   })
   return dispatcher
 })
-
-
-interface Stats {
-  createTime: number
-  voiceUsage?: {[voiceKey: string]: number|undefined}
-}
-
-export async function updateStats(updater: (stats: Stats) => void) {
-  try {
-    const stats: Stats = await getFile(config.stats.file)
-      .then(blob => blob.text())
-      .then(JSON.parse)
-      .catch(err => {
-        if (err instanceof DOMException && err.name == "NotFoundError") return {createTime: Date.now()}
-        throw err
-      })
-    updater(stats)
-    if (Date.now() - stats.createTime >= config.stats.maxAge) {
-      await fetch(config.serviceUrl + "/piper?capabilities=submitStats-1.0", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({method: "submitStats", stats})
-      })
-      await deleteFile(config.stats.file)
-    }
-    else {
-      await putFile(config.stats.file, new Blob([JSON.stringify(stats)], {type: "application/json"}))
-    }
-  }
-  catch (err) {
-    console.error(err)
-  }
-}
-
-
-export async function getPopularity() {
-  const res = await fetch(config.serviceUrl + "/piper?capabilities=getVoiceStats-1.0", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({method: "getVoiceStats"})
-  })
-  if (!res.ok) throw new Error("Server return " + res.status)
-  const voiceStats = await res.json()
-  return voiceStats.popularity
-}

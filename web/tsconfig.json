@@ -1,13 +1,7 @@
 {
-  "compilerOptions": {
-    "strict": true,
-    "module": "es6",
-    "target": "es6",
-    "jsx": "react",
-    "allowJs": false,
-    "moduleResolution": "Bundler"
-  },
-  "include": [
-    "src/**/*"
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
   ]
 }

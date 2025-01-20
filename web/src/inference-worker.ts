@@ -1,17 +1,20 @@
-import * as ort from "onnxruntime-web/wasm"
-import { ModelConfig, PcmData } from "./types"
-import config from "./config"
+import { env } from "@huggingface/transformers"
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
+import { KokoroTTS } from "kokoro-js"
+import { PcmData, Voice } from "./types"
+import { lazy } from "./utils"
 
-ort.env.wasm.numThreads = navigator.hardwareConcurrency
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/"
+if (env.backends.onnx.wasm) {
+  env.backends.onnx.wasm.numThreads = navigator.hardwareConcurrency
+}
+
 
 
 class TransferableResult {
   constructor(public result: unknown, public transfer: Transferable[]) {}
 }
 
-const dispatcher = makeDispatcher("piper-worker", {makeInferenceEngine, infer, dispose})
+const dispatcher = makeDispatcher("tts-worker", {getVoiceList, synthesize})
 
 addEventListener("message", event => {
   //console.debug(event.data)
@@ -29,68 +32,61 @@ addEventListener("message", event => {
   })
 })
 
-
-interface Engine {
-  infer(phonemeIds: readonly number[], speakerId: number|undefined): Promise<PcmData>
-  dispose(): Promise<void>
+function notifySuper(method: string, args: Record<string, unknown>) {
+  postMessage({
+    to: "tts-service",
+    type: "notification",
+    method, args
+  })
 }
 
-const engines = new Map<string, Engine>()
 
 
-async function makeInferenceEngine(args: Record<string, unknown>) {
-  const model = args.model as Blob
-  const modelConfig = args.modelConfig as ModelConfig
-
-  const sampleRate = modelConfig.audio?.sample_rate ?? config.defaults.sampleRate
-  const numChannels = config.defaults.numChannels
-  const noiseScale = modelConfig.inference?.noise_scale ?? config.defaults.noiseScale
-  const lengthScale = modelConfig.inference?.length_scale ?? config.defaults.lengthScale
-  const noiseW = modelConfig.inference?.noise_w ?? config.defaults.noiseW
-
-  const session = await ort.InferenceSession.create(URL.createObjectURL(model))
-  const engine: Engine = {
-    async infer(phonemeIds, speakerId) {
-      const feeds: Record<string, ort.Tensor> = {
-        input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
-        input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
-        scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
+const getKokoro = lazy(() => {
+  let file = ""
+  return KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-ONNX", {
+    dtype: "q8",
+    progress_callback(info) {
+      switch (info.status) {
+        case "initiate":
+          if (info.file.endsWith(".onnx")) file = info.file
+          break
+        case "download":
+          if (info.file == file) notifySuper("onModelStatus", {status: "loading", percent: 0})
+          break
+        case "progress":
+          if (info.file == file) notifySuper("onModelStatus", {status: "loading", percent: info.progress})
+          break
+        case "done":
+          if (info.file == file) notifySuper("onModelStatus", {status: "ready"})
+          break
       }
-      if (speakerId != undefined) feeds.sid = new ort.Tensor('int64', [speakerId])
-      const {output} = await session.run(feeds)
-      return {
-        samples: output.data as Float32Array,
-        sampleRate,
-        numChannels
-      }
-    },
-    async dispose() {
-      await session.release()
     }
+  })
+})
+
+async function getVoiceList(): Promise<Voice[]> {
+  const { voices } = await getKokoro()
+  return Object.entries(voices)
+    .map(([id, { name, language, gender }]) => ({ id, name, language, gender }))
+}
+
+async function synthesize(args: Record<string, unknown>) {
+  const text = args.text as string
+  const voiceId = args.voiceId as string
+
+  const kokoro = await getKokoro()
+  const start = Date.now()
+  try {
+    const rawAudio = await kokoro.generate(text, { voice: voiceId as any })
+    const pcmData: PcmData = {
+      samples: rawAudio.audio,
+      sampleRate: rawAudio.sampling_rate,
+      numChannels: 1
+    }
+    return new TransferableResult(pcmData, [pcmData.samples.buffer])
   }
-
-  const engineId = String(Math.random())
-  engines.set(engineId, engine)
-  return engineId
-}
-
-
-async function infer(args: Record<string, unknown>) {
-  const engineId = args.engineId as string
-  const phonemeIds = args.phonemeIds as readonly number[]
-  const speakerId = args.speakerId as number|undefined
-
-  const engine = engines.get(engineId)
-  if (!engine) throw new Error("Bad engineId")
-  const pcmData = await engine.infer(phonemeIds, speakerId)
-  return new TransferableResult(pcmData, [pcmData.samples.buffer])
-}
-
-
-async function dispose(args: Record<string, unknown>) {
-  const engineId = args.engineId as string
-
-  const engine = engines.get(engineId)
-  if (!engine) throw new Error("Bad engineId")
-  await engine.dispose()
+  finally {
+    console.debug("Synthesized", Date.now() - start, text)
+  }
 }

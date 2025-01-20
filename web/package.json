@@ -1,39 +1,33 @@
 {
-  "name": "piper-browser-extension",
-  "version": "1.0.0",
-  "description": "Provides Piper neural text-to-speech voices as a browser extension",
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "build-debug": "webpack --mode=development",
-    "build-release": "webpack --mode=production",
-    "deploy-prod": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/piper.ttstool.com"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ken107/piper-browser-extension.git"
-  },
-  "author": "Hai Phan <hai.phan@gmail.com>",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/ken107/piper-browser-extension/issues"
-  },
-  "homepage": "https://github.com/ken107/piper-browser-extension#readme",
-  "devDependencies": {
-    "@types/chrome": "^0.0.260",
-    "@types/react": "^18.2.56",
-    "@types/react-dom": "^18.2.19",
-    "copy-webpack-plugin": "^12.0.2",
-    "ts-loader": "^9.5.1",
-    "typescript": "^5.3.3",
-    "webpack": "^5.90.2",
-    "webpack-bundle-analyzer": "^4.10.1",
-    "webpack-cli": "^5.1.4"
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@lsdsoftware/message-dispatcher": "^1.0.4",
-    "onnxruntime-web": "^1.17.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "@lsdsoftware/message-dispatcher": "^1.0.6",
+    "kokoro-js": "^1.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "rxjs": "^7.8.1",
-    "use-immer": "^0.9.0"
+    "use-immer": "^0.11.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "typescript": "~5.6.2",
+    "typescript-eslint": "^8.18.2",
+    "vite": "^6.0.5"
   }
 }
