@@ -15,7 +15,7 @@ const query = new URLSearchParams(location.search)
 let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 
 
-function App() {
+export function App() {
   const [state, stateUpdater] = useImmer({
     advertisedVoices: [] as AdvertisedVoice[],
     isInstalled: localStorage.getItem("isInstalled") ? true : false,

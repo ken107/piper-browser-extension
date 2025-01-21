@@ -28,7 +28,7 @@ export async function makeAdvertisedVoiceList(): Promise<AdvertisedVoice[]> {
 
 
 export function parseAdvertisedVoiceName(name: string): {voiceId: string} {
-  const [kokoro, voiceId] = name.split(" ")
+  const [_, voiceId] = name.split(" ")
   return {
     voiceId
   }
