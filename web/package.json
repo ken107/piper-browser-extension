@@ -5,7 +5,9 @@
   "scripts": {
     "build-debug": "webpack --mode=development",
     "build-release": "webpack --mode=production",
-    "deploy-prod": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/piper.ttstool.com"
+    "prod-sync": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public --exclude piper_phonemize.data build/release s3://lsdsoftware-websites/piper.ttstool.com",
+    "prod-cp": "aws s3 cp --metadata-directive REPLACE --cache-control max-age=86400,public --content-type application/protobuf build/release/piper_phonemize.data s3://lsdsoftware-websites/piper.ttstool.com/",
+    "deploy-prod": "npm run build-release && npm run prod-sync && npm run prod-cp"
   },
   "repository": {
     "type": "git",
