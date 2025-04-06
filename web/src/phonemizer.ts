@@ -1,5 +1,6 @@
 import { ModelConfig } from "./types"
 import config from "./config"
+import { lazy } from "./utils"
 
 export interface Phrase {
   readonly phonemes: string[]
@@ -8,27 +9,65 @@ export interface Phrase {
 }
 
 
+declare function createPiperPhonemize(module: {
+  print(output: string): void
+}): Promise<{
+  callMain(args: string[]): number
+}>
+
+const getLocalPhonemizer = lazy(async () => {
+  let results: Array<{text: string, phonemes: string[][]}> = []
+  const piperPhonemize = await createPiperPhonemize({
+    print(output) {
+      results.push(JSON.parse(output))
+    }
+  })
+  return {
+    phonemize(texts: string[], lang: string) {
+      results = []
+      const exitCode = piperPhonemize.callMain([
+        "--espeak_data", "/espeak-ng-data",
+        "--language", lang,
+        "--input", JSON.stringify(texts.map(text => ({text}))),
+      ])
+      if (exitCode != 0) throw new Error("Piper phonemizer failed with exit code " + exitCode)
+      return results
+    }
+  }
+})
+
+async function batchPhonemize(texts: string[], lang: string, phonemeType: "text"|"espeak") {
+  try {
+    if (phonemeType == "espeak" && !/^(ru|lb|ar)\b/.test(lang)) {
+      const {phonemize} = await getLocalPhonemizer()
+      return phonemize(texts, lang)
+    }
+  }
+  catch (err) {
+    console.error("Failed to use local phonemizer, falling back to server", err)
+  }
+  const res = await fetch(config.serviceUrl + "/piper?capabilities=batchPhonemize-1.0", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      method: "batchPhonemize",
+      type: phonemeType,
+      texts,
+      lang
+    })
+  })
+  if (!res.ok) throw new Error("Server return " + res.status)
+  return await res.json() as Array<{text: string, phonemes: string[][]}>
+}
+
+
 export function makePhonemizer(modelConfig: ModelConfig) {
   const phonemeType = (modelConfig.phoneme_type ?? config.defaults.phonemeType) == "text" ? "text" : "espeak"
   const sentenceSilenceSeconds = config.defaults.sentenceSilenceSeconds
 
-  if (phonemeType == "espeak" && !modelConfig.espeak?.voice) throw new Error("Missing modelConfig.espeak.voice")
-
   return {
-    async batchPhonemize(texts: Array<string>): Promise<Array<Phrase[]>> {
-      const res = await fetch(config.serviceUrl + "/piper?capabilities=batchPhonemize-1.0", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          method: "batchPhonemize",
-          type: phonemeType,
-          texts,
-          lang: phonemeType == "espeak" ? modelConfig.espeak!.voice : "ignore"
-        })
-      })
-      if (!res.ok) throw new Error("Server return " + res.status)
-
-      const results = await res.json() as Array<{text: string, phonemes: string[][]}>
+    async batchPhonemize(texts: string[]): Promise<Phrase[][]> {
+      const results = await batchPhonemize(texts, modelConfig.espeak.voice, phonemeType)
       if (results.length != texts.length || results.some((x,i) => x.text != texts[i])) throw new Error("Unexpected")
 
       return results.map(result => {

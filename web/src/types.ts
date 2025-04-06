@@ -42,8 +42,8 @@ export interface ModelConfig {
   readonly audio?: {
     readonly sample_rate?: number
   }
-  readonly espeak?: {
-    readonly voice?: string
+  readonly espeak: {
+    readonly voice: string
   }
   readonly inference?: {
     readonly noise_scale?: number
