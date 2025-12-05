@@ -1,10 +1,14 @@
+/// <reference lib="webworker" />
+
+declare const self: ServiceWorkerGlobalScope;
+export {};
 
 //On app update, besides switching cache bucket, we need to force browser to get the latest versions
 //from the network by also changing the query string of every resource
 //Otherwise our new cache bucket might get populated with old files from the browser cache (or
 //any intermediary network caches)
 
-const myCache = {
+const myCache: Record<string, string[]> = {
   'app-v16': [
     '/?v=16',
     '/index.html?v=16',
@@ -24,9 +28,9 @@ const myCache = {
   ]
 }
 
-self.addEventListener('install', event => event.waitUntil(populateCache()))
-self.addEventListener('activate', event => event.waitUntil(removeOldCaches()))
-self.addEventListener('fetch', event => event.respondWith(handleFetch(event.request)))
+self.addEventListener('install', (event: ExtendableEvent) => event.waitUntil(populateCache()))
+self.addEventListener('activate', (event: ExtendableEvent) => event.waitUntil(removeOldCaches()))
+self.addEventListener('fetch', (event: FetchEvent) => event.respondWith(handleFetch(event.request)))
 
 
 async function populateCache() {
@@ -44,6 +48,6 @@ async function removeOldCaches() {
   }
 }
 
-async function handleFetch(request) {
+async function handleFetch(request: Request) {
   return await caches.match(request, {ignoreSearch: true}) || fetch(request)
 }

@@ -12,6 +12,10 @@ module.exports = (env, argv) => ({
       import: './src/inference-worker.ts',
       filename: 'inference-worker.js',
     },
+    serviceWorker: {
+      import: './src/service-worker.ts',
+      filename: 'sw.js',
+    }
   },
   devtool: argv.mode == 'production' ? undefined : 'source-map',
   module: {
