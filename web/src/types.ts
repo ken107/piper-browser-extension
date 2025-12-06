@@ -1,17 +1,21 @@
 
 export interface MyVoice {
   id: string
+  lang: string
   stylePath: string
 }
 
-export interface AdvertisedVoice {
-  readonly voiceName: string
-  readonly lang: string
-  readonly eventTypes: string[]
+export interface Installable {
+  url: string
+  size: number|null
 }
 
-export type InstallState = "not-installed"|"installing"|"installed"
-export type LoadState = "not-loaded"|"loading"|"loaded"
+export type LoadState = {
+  type: "not-installed"|"installed"|"loading"|"loaded"|"in-use"
+} | {
+  type: "installing"
+  progress: string
+}
 
 export interface PcmData {
   readonly samples: Float32Array

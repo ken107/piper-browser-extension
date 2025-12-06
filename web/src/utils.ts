@@ -10,85 +10,32 @@ export function lazy<T>(func: () => T) {
   return () => value ?? (value = func())
 }
 
-export async function* iterateStream<T>(stream: ReadableStream<T>) {
-  const reader = stream.getReader()
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      yield value
+export function wrapStream<T>(sourceStream: ReadableStream<T>, onChunk: (chunk: T) => void) {
+  const reader = sourceStream.getReader();
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            break;
+          }
+          onChunk(value);
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      reader.cancel(reason);
     }
-  }
-  finally {
-    reader.releaseLock()
-  }
-}
-
-export async function fetchWithProgress(url: string, callback: (percent: number) => void) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error('Network response was not ok');
-  }
-  const contentLength = response.headers.get('content-length');
-  if (contentLength === null) {
-    throw new Error("Couldn't retrieve content-length");
-  }
-  if (!response.body) {
-    throw new Error("No content")
-  }
-
-  const totalSize = parseInt(contentLength, 10);
-  const chunks = [] as ArrayBuffer[]
-  let loaded = 0;
-
-  for await (const chunk of iterateStream(response.body)) {
-    chunks.push(chunk)
-    loaded += chunk.length;
-    const progress = (loaded / totalSize) * 100;
-    callback(progress);
-  }
-
-  return new Blob(chunks, {
-    type: response.headers.get('content-type') || undefined
-  })
+  });
 }
 
 export function wait<T>(obs: rxjs.Observable<T>, value: T) {
   return rxjs.firstValueFrom(obs.pipe(rxjs.filter(x => x == value)))
-}
-
-export function makeExposedPromise<T>() {
-  const exposed = {} as {
-    promise: Promise<T>
-    fulfill(value: T): void
-    reject(reason: unknown): void
-  }
-  exposed.promise = new Promise((fulfill, reject) => {
-    exposed.fulfill = fulfill
-    exposed.reject = reject
-  })
-  return exposed
-}
-
-export function makeBatchProcessor<T, V>(maxBatchSize: number, process: (items: T[]) => Promise<V[]>) {
-  function makeBatch() {
-    const items: T[] = []
-    return {
-      items,
-      size: 0,
-      process: lazy(() => process(items))
-    }
-  }
-  let currentBatch: ReturnType<typeof makeBatch>|undefined
-  return {
-    add(item: T, itemSize: number): () => Promise<V> {
-      const batch = (currentBatch && currentBatch.size + itemSize <= maxBatchSize) ? currentBatch : (currentBatch = makeBatch())
-      const index = batch.items.length
-      batch.items.push(item)
-      batch.size += itemSize
-      return () => batch.process().then(results => results[index])
-    }
-  }
 }
 
 export function makeWav(_chunks: Array<{pcmData: PcmData, appendSilenceSeconds: number}>): Blob {
