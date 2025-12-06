@@ -1,13 +1,12 @@
 {
-  "name": "piper-browser-extension",
+  "name": "supertonic-browser-extension",
   "version": "1.0.0",
-  "description": "Provides Piper neural text-to-speech voices as a browser extension",
+  "description": "Provides Supertonic text-to-speech voices as a browser extension",
   "scripts": {
     "build-debug": "webpack --mode=development",
     "build-release": "webpack --mode=production",
-    "prod-sync": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public --exclude piper_phonemize.data build/release s3://lsdsoftware-websites/piper.ttstool.com",
-    "prod-cp": "aws s3 cp --metadata-directive REPLACE --cache-control max-age=86400,public --content-type application/protobuf build/release/piper_phonemize.data s3://lsdsoftware-websites/piper.ttstool.com/",
-    "deploy-prod": "npm run build-release && npm run prod-sync && npm run prod-cp"
+    "prod-sync": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/supertonic.ttstool.com",
+    "deploy-prod": "npm run build-release && npm run prod-sync"
   },
   "repository": {
     "type": "git",
@@ -18,24 +17,24 @@
   "bugs": {
     "url": "https://github.com/ken107/piper-browser-extension/issues"
   },
-  "homepage": "https://github.com/ken107/piper-browser-extension#readme",
+  "homepage": "https://github.com/ken107/piper-browser-extension/tree/supertonic#readme",
   "devDependencies": {
-    "@types/chrome": "^0.0.260",
-    "@types/react": "^18.2.56",
-    "@types/react-dom": "^18.2.19",
-    "copy-webpack-plugin": "^12.0.2",
-    "ts-loader": "^9.5.1",
-    "typescript": "^5.3.3",
-    "webpack": "^5.90.2",
-    "webpack-bundle-analyzer": "^4.10.1",
-    "webpack-cli": "^5.1.4"
+    "@types/chrome": "^0.1.32",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "copy-webpack-plugin": "^13.0.1",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "webpack": "^5.103.0",
+    "webpack-bundle-analyzer": "^5.0.1",
+    "webpack-cli": "^6.0.1"
   },
   "dependencies": {
     "@lsdsoftware/message-dispatcher": "^1.0.4",
     "onnxruntime-web": "^1.17.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "rxjs": "^7.8.1",
-    "use-immer": "^0.9.0"
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "rxjs": "^7.8.2",
+    "use-immer": "^0.11.0"
   }
 }

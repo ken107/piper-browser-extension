@@ -1,2 +1,2 @@
-# piper-browser-extension
-Provides [Piper](https://github.com/rhasspy/piper) text-to-speech voices as a browser extension
+# supertonic-browser-extension
+Provides [Supertonic](https://huggingface.co/Supertone/supertonic) text-to-speech voices as a browser extension
