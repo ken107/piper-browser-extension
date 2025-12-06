@@ -1,17 +1,21 @@
-import * as ort from "onnxruntime-web/wasm"
-import { ModelConfig, PcmData } from "./types"
-import config from "./config"
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
+import * as ort from "onnxruntime-web/wasm"
+import config from "./config"
+import { loadTextToSpeech, loadVoiceStyle, TextToSpeech } from "./supertonic"
+import { PcmData } from "./types"
 
-ort.env.wasm.numThreads = navigator.hardwareConcurrency
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/"
+ort.env.wasm.numThreads = navigator.hardwareConcurrency > 2
+  ? navigator.hardwareConcurrency - 1
+  : navigator.hardwareConcurrency;
+
+ort.env.wasm.wasmPaths = config.ortWasmPaths
 
 
 class TransferableResult {
   constructor(public result: unknown, public transfer: Transferable[]) {}
 }
 
-const dispatcher = makeDispatcher("piper-worker", {makeInferenceEngine, infer, dispose})
+const dispatcher = makeDispatcher("piper-worker", {initialize, infer, dispose})
 
 addEventListener("message", event => {
   //console.debug(event.data)
@@ -30,67 +34,56 @@ addEventListener("message", event => {
 })
 
 
-interface Engine {
-  infer(phonemeIds: readonly number[], speakerId: number|undefined): Promise<PcmData>
-  dispose(): Promise<void>
-}
+let engine: { textToSpeech: TextToSpeech, cfgs: any } | undefined
 
-const engines = new Map<string, Engine>()
-
-
-async function makeInferenceEngine(args: Record<string, unknown>) {
-  const model = args.model as Blob
-  const modelConfig = args.modelConfig as ModelConfig
-
-  const sampleRate = modelConfig.audio?.sample_rate ?? config.defaults.sampleRate
-  const numChannels = config.defaults.numChannels
-  const noiseScale = modelConfig.inference?.noise_scale ?? config.defaults.noiseScale
-  const lengthScale = modelConfig.inference?.length_scale ?? config.defaults.lengthScale
-  const noiseW = modelConfig.inference?.noise_w ?? config.defaults.noiseW
-
-  const session = await ort.InferenceSession.create(URL.createObjectURL(model))
-  const engine: Engine = {
-    async infer(phonemeIds, speakerId) {
-      const feeds: Record<string, ort.Tensor> = {
-        input: new ort.Tensor('int64', phonemeIds, [1, phonemeIds.length]),
-        input_lengths: new ort.Tensor('int64', [phonemeIds.length]),
-        scales: new ort.Tensor('float32', [noiseScale, lengthScale, noiseW])
-      }
-      if (speakerId != undefined) feeds.sid = new ort.Tensor('int64', [speakerId])
-      const {output} = await session.run(feeds)
-      return {
-        samples: output.data as Float32Array,
-        sampleRate,
-        numChannels
-      }
-    },
-    async dispose() {
-      await session.release()
-    }
+async function initialize(args: Record<string, unknown>) {
+  if (engine) {
+    throw new Error('Already initialized')
   }
 
-  const engineId = String(Math.random())
-  engines.set(engineId, engine)
-  return engineId
+  const { sessionOptions } = args
+
+  engine = await loadTextToSpeech(
+    config.onnxDir,
+    sessionOptions as ort.InferenceSession.SessionOptions | undefined
+  )
 }
 
-
 async function infer(args: Record<string, unknown>) {
-  const engineId = args.engineId as string
-  const phonemeIds = args.phonemeIds as readonly number[]
-  const speakerId = args.speakerId as number|undefined
+  if (!engine) {
+    throw new Error('Not initialized')
+  }
 
-  const engine = engines.get(engineId)
-  if (!engine) throw new Error("Bad engineId")
-  const pcmData = await engine.infer(phonemeIds, speakerId)
+  const { text, voiceId, numSteps } = args
+  if (typeof text != 'string'
+    || typeof voiceId != 'string'
+    || typeof numSteps != 'number') {
+    throw new Error('Bad args')
+  }
+
+  const voice = config.voiceList.find(voice => voice.id == voiceId)
+  if (!voice) {
+    throw new Error('Voice not found')
+  }
+
+  const style = await loadVoiceStyle([voice.stylePath])
+
+  const { wav, duration } = await engine.textToSpeech._infer([text], style, numSteps)
+  const pcmData: PcmData = {
+    samples: wav,
+    sampleRate: engine.cfgs.ae.sample_rate,
+    numChannels: 1
+  }
   return new TransferableResult(pcmData, [pcmData.samples.buffer])
 }
 
-
 async function dispose(args: Record<string, unknown>) {
-  const engineId = args.engineId as string
+  if (!engine) {
+    throw new Error('Not initialized')
+  }
 
-  const engine = engines.get(engineId)
-  if (!engine) throw new Error("Bad engineId")
-  await engine.dispose()
+  const results = await engine.textToSpeech.dispose()
+  if (results.some(x => x.status == 'rejected')) {
+    console.error('Fail to dispose', results)
+  }
 }
