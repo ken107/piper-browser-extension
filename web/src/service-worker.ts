@@ -3,30 +3,31 @@
 declare const self: ServiceWorkerGlobalScope;
 export {};
 
+import config from "./config";
+
 //On app update, besides switching cache bucket, we need to force browser to get the latest versions
 //from the network by also changing the query string of every resource
 //Otherwise our new cache bucket might get populated with old files from the browser cache (or
 //any intermediary network caches)
 
 const myCache: Record<string, string[]> = {
-  'app-v16': [
-    '/?v=16',
-    '/index.html?v=16',
-    '/bundle.js?v=16',
-    '/inference-worker.js?v=16',
+  'app-v1': [
+    '/?v=1',
+    '/index.html?v=1',
+    '/bundle.js?v=1',
+    '/inference-worker.js?v=1',
   ],
   'bootstrap-v1': [
     '/bootstrap.min.css?v=1',
   ],
-  'piper-phonemize-v1': [
-    '/piper_phonemize.js?v=1',
-    '/piper_phonemize.wasm?v=1',
-    '/piper_phonemize.data?v=1',
-  ],
-  'ort-1.17.3': [
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort-wasm-simd-threaded.wasm',
-  ]
 }
+
+//populated on initial fetch
+myCache[config.ortCacheKey] = []
+
+//managed by application
+myCache[config.supertonicCacheKey] = []
+
 
 self.addEventListener('install', (event: ExtendableEvent) => event.waitUntil(populateCache()))
 self.addEventListener('activate', (event: ExtendableEvent) => event.waitUntil(removeOldCaches()))
@@ -49,5 +50,12 @@ async function removeOldCaches() {
 }
 
 async function handleFetch(request: Request) {
-  return await caches.match(request, {ignoreSearch: true}) || fetch(request)
+  let res = await caches.match(request, {ignoreSearch: true});
+  if (res) return res;
+  res = await fetch(request)
+  if (res.ok && request.url.startsWith(config.ortWasmPaths)) {
+    caches.open(config.ortCacheKey)
+      .then(cache => cache.put(request, res.clone()))
+  }
+  return res
 }
