@@ -58,21 +58,12 @@ async function initialize(args: Record<string, unknown>) {
     throw new Error('Already initialized')
   }
 
-  try {
-    engine = await loadTextToSpeech(config.onnxDir, {
-      executionProviders: ['webgpu'],
-      graphOptimizationLevel: 'all'
-    })
-    return 'webgpu'
-  } catch (err) {
-    console.info('Fail webgpu, falling back to wasm', err)
+  engine = await loadTextToSpeech(config.onnxDir, {
+    executionProviders: ['webgpu', 'wasm'],
+    graphOptimizationLevel: 'all'
+  })
 
-    engine = await loadTextToSpeech(config.onnxDir, {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all'
-    })
-    return 'wasm'
-  }
+  return 'webgpu, wasm'
 }
 
 async function infer(args: Record<string, unknown>) {

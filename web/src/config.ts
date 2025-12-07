@@ -1,6 +1,6 @@
 import { MyVoice } from "./types"
 
-const ortVer = '1.17.3'
+const ortVer = '1.23.2'
 const supertonicVer = '0'
 const supertonicRepoPath = `https://huggingface.co/Supertone/supertonic/resolve/main`
 const onnxDir = `${supertonicRepoPath}/onnx`

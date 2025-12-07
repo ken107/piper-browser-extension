@@ -4,7 +4,7 @@ import { immediate } from "./utils"
 
 
 const worker = immediate(() => {
-  const worker = new Worker("inference-worker.js")
+  const worker = new Worker(new URL("inference-worker.ts", import.meta.url))
   const dispatcher = makeDispatcher("piper-service", {})
   worker.addEventListener("message", event => dispatcher.dispatch(event.data, null, worker.postMessage))
   return {
