@@ -3,59 +3,111 @@ import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
+import { advertiseVoices, getInstallState, install, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
-import * as storage from "./storage"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice, PcmData, PlayAudio } from "./types"
-import { immediate, makeWav } from "./utils"
+import { Installable, LoadState, PcmData, PlayAudio } from "./types"
+import { getContentLengths, immediate, makeWav, printMegabytes } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 const query = new URLSearchParams(location.search)
-const synthesizers = new Map<string, ReturnType<typeof makeSynthesizer>>()
+let synthesizer: ReturnType<typeof makeSynthesizer> | undefined
 let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 
 
 function App() {
   const [state, stateUpdater] = useImmer({
-    voiceList: null as MyVoice[]|null,
-    popularity: {} as {[voiceKey: string]: number},
+    installables: null as Installable[]|null,
+    loadState: null as LoadState|null,
+    numSteps: 5,
     activityLog: "",
-    isExpanded: {} as Record<string, boolean>,
     showInfoBox: false,
     test: {
       current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
       downloadUrl: null as string|null
     }
   })
+
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
   }
-  const installed = React.useMemo(() => state.voiceList?.filter(x => x.installState == "installed") ?? [], [state.voiceList])
-  const notInstalled = React.useMemo(() => state.voiceList?.filter(x => x.installState != "installed") ?? [], [state.voiceList])
-  const advertised = React.useMemo(() => makeAdvertisedVoiceList(state.voiceList), [state.voiceList])
+
+  const isInstalled = React.useMemo<boolean|null>(() => {
+    if (state.loadState == null)
+      return null
+    switch (state.loadState.type) {
+      case 'in-use':
+      case 'installed':
+      case 'loaded':
+      case 'loading':
+        return true
+      case 'installing':
+      case 'not-installed':
+        return false
+    }
+  }, [
+    state.loadState
+  ])
+
+  const loadStateText = React.useMemo(() => {
+    if (state.loadState == null)
+      return null
+    switch (state.loadState.type) {
+      case 'not-installed': return { text: 'Not Installed', statusColor: 'gray' }
+      case 'installing': return { text: 'Installing ' + state.loadState.progress, statusColor: 'yellow' }
+      case "installed": return { text: "Installed", statusColor: 'blue' }
+      case "loading": return { text: 'Loading', statusColor: 'yellow' }
+      case "loaded": return { text: "Ready", statusColor: 'green' }
+      case 'in-use': return { text: 'In Use', statusColor: 'red' }
+    }
+  }, [
+    state.loadState
+  ])
+
+  const installSizeText = React.useMemo(() => {
+    if (state.installables == null)
+      return null
+    const size = state.installables.reduce((sum: number|null, {size}) => sum != null && size != null ? sum + size : null, 0)
+    if (size == null)
+      return null
+    return printMegabytes(size)
+  }, [
+    state.installables
+  ])
 
 
   //startup
   React.useEffect(() => {
-    getVoiceList()
-      .then(voiceList => stateUpdater(draft => {
-        draft.voiceList = voiceList
-      }))
+    getInstallState()
+      .then(installState => stateUpdater(draft => { draft.loadState = installState }))
       .catch(reportError)
-    getPopularity()
-      .then(popularity => stateUpdater(draft => {
-        draft.popularity = popularity
-      }))
-      .catch(console.error)
   }, [])
 
   //advertise voices
   React.useEffect(() => {
-    if (advertised) advertiseVoices(advertised)
+    if (isInstalled != null)
+      advertiseVoices(isInstalled ? config.voiceList : [])
   }, [
-    advertised
+    isInstalled
+  ])
+
+  //installables
+  React.useEffect(() => {
+    if (isInstalled != null) {
+      if (!isInstalled && !state.installables) {
+        getContentLengths(config.installables).then(results =>
+          stateUpdater(draft => {
+            draft.installables = results.map((result, i) => ({
+              url: config.installables[i],
+              size: result.status == 'fulfilled' ? result.value : null
+            }))
+          })
+        ).catch(reportError)
+      }
+    }
+  }, [
+    isInstalled, state.installables
   ])
 
   //handle requests
@@ -84,7 +136,7 @@ function App() {
     <div className="container">
       <div className="text-end text-muted small mt-1 mb-4">
         <span className="link"
-          onClick={() => stateUpdater(draft => {draft.showInfoBox = true})}>What is Piper?</span>
+          onClick={() => stateUpdater(draft => {draft.showInfoBox = true})}>What is Supertonic?</span>
       </div>
 
       {(query.has("showTest") ? query.get("showTest") != "0" : top == self) &&
@@ -94,8 +146,8 @@ function App() {
             <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
             <select className="form-control mt-3" name="voice">
               <option value="">Select a voice</option>
-              {advertised?.map(voice =>
-                <option key={voice.voiceName} value={voice.voiceName}>{voice.voiceName}</option>
+              {isInstalled && config.voiceList.map(voice =>
+                <option key={voice.id} value={voice.id}>{voice.id}</option>
               )}
             </select>
             <div className="d-flex align-items-center mt-3">
@@ -138,123 +190,72 @@ function App() {
       </div>
 
       <div>
-        <h2 className="text-muted">Installed</h2>
-        {installed.length == 0 &&
-          <div className="text-muted">Installed voices will appear here</div>
-        }
-        {installed.length > 0 &&
-          <table className="table table-borderless table-hover table-sm">
-            <thead>
-              <tr>
-                <th>Voice Pack</th>
-                <th>Language</th>
-                <th>Status</th>
-                <th></th>
-                <th style={{width: "0%"}}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {installed.map(voice =>
-                <tr key={voice.key}>
-                  <td>
-                    <span className="me-1">{voice.name}</span>
-                    <span className="me-1">[{voice.quality}]</span>
-                    {voice.num_speakers <= 1 &&
-                      <span className="link" onClick={() => sampler.play(voice)}>sample</span>
-                    }
-                    {voice.num_speakers > 1 &&
-                      <span style={{cursor: "pointer"}}
-                        onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
-                    }
-                    {state.isExpanded[voice.key] &&
-                      <ul>
-                        {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
-                          <li key={speakerId}>
-                            <span className="me-1">{speakerName}</span>
-                            <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
-                          </li>
-                        )}
-                      </ul>
-                    }
-                  </td>
-                  <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
-                  <td className="align-top">
-                    {immediate(() => {
-                      if (voice.numActiveUsers) return <span style={{fontWeight: "bold"}}>(in use)</span>
-                      switch (voice.loadState) {
-                        case "not-loaded": return "(on disk)"
-                        case "loading": return <span style={{fontWeight: "bold", color: "red"}}>(loading)</span>
-                        case "loaded": return "(in memory)"
-                      }
-                    })}
-                  </td>
-                  <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                  <td className="align-top text-end ps-2">
-                    <button type="button" className="btn btn-danger btn-sm"
-                      onClick={() => onDelete(voice.key)}>Delete</button>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        }
+        <h2 className="text-muted">Install</h2>
+        <table className="table table-bordered">
+          <thead className="table-light">
+            <tr>
+              <th>Status</th>
+              <th>Options</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div style={{fontSize: 'larger'}}>
+                  {loadStateText && <>
+                    <span style={{color: loadStateText.statusColor}}>●</span>
+                    <span className="ms-1">{loadStateText.text}</span>
+                  </>}
+                </div>
+                <div className="mt-4">
+                  {isInstalled == false && <>
+                    <button type="button" className="btn btn-primary"
+                      disabled={state.loadState?.type == 'installing'}
+                      onClick={onInstall}>Install</button>
+                    <span className="ms-2">{installSizeText}</span>
+                  </>}
+                  {isInstalled == true &&
+                    <button type="button" className="btn btn-danger"
+                      disabled={state.loadState?.type == 'loading' || state.loadState?.type == 'in-use'}
+                      onClick={onUninstall}>Uninstall</button>
+                  }
+                </div>
+              </td>
+              <td valign="top" style={{width: '50%'}}>
+                <label htmlFor="numSteps">Quality (Steps)</label>
+                <input type="number" className="form-control" id="numSteps" required min="1" max="16"
+                  value={state.numSteps}
+                  onChange={event => stateUpdater(draft => { draft.numSteps = Number(event.target.value) })} />
+                <div className="form-text">
+                  Decrease quality if you experience speech gaps between sentences.
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div>
-        <h2 className="text-muted">Available to Install</h2>
-        {notInstalled.length > 0 &&
-          <table className="table table-borderless table-hover table-sm">
-            <thead>
-              <tr>
-                <th>Voice Pack</th>
-                <th>Language</th>
-                <th>Popularity</th>
-                <th></th>
-                <th style={{width: "0%"}}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {notInstalled.map(voice =>
-                <tr key={voice.key}>
-                  <td>
-                    <span className="me-1">{voice.name}</span>
-                    <span className="me-1">[{voice.quality}]</span>
-                    {voice.num_speakers <= 1 &&
-                      <span className="link" onClick={() => sampler.play(voice)}>sample</span>
-                    }
-                    {voice.num_speakers > 1 &&
-                      <span style={{cursor: "pointer"}}
-                        onClick={() => toggleExpanded(voice.key)}>({voice.num_speakers} voices) {state.isExpanded[voice.key] ? '▲' : '▼'}</span>
-                    }
-                    {state.isExpanded[voice.key] &&
-                      <ul>
-                        {voice.speakerList.map(({speakerName, speakerId}) =>
-                          <li key={speakerName}>
-                            <span className="me-1">{speakerName}</span>
-                            <span className="link" onClick={() => sampler.play(voice, speakerId)}>sample</span>
-                          </li>
-                        )}
-                      </ul>
-                    }
-                  </td>
-                  <td className="align-top">{voice.language.name_native} ({voice.language.country_english})</td>
-                  <td className="align-top">
-                    <div>{state.popularity[voice.key] ?? "\u00A0"}</div>
-                    {state.isExpanded[voice.key] &&
-                      voice.speakerList.map(({speakerName}) =>
-                        <div key={speakerName}>{state.popularity[voice.key + speakerName] ?? "\u00A0"}</div>
-                      )
-                    }
-                  </td>
-                  <td className="align-top text-end">{(voice.modelFileSize /1e6).toFixed(1)}MB</td>
-                  <td className="align-top text-end ps-2">
-                    <InstallButton voice={voice} onInstall={onInstall} />
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        }
+        <h2 className="text-muted">Voice List</h2>
+        <table className="table table-bordered">
+          <thead className="table-light">
+            <tr>
+              <th>Voice</th>
+              <th>Language</th>
+            </tr>
+          </thead>
+          <tbody>
+          {config.voiceList.map(voice =>
+            <tr key={voice.id}>
+              <td>
+                <span className="me-1">{voice.id}</span>
+                <span className="link" onClick={() => sampler.play(voice)}>sample</span>
+              </td>
+              <td className="align-top">{voice.lang}</td>
+            </tr>
+          )}
+          </tbody>
+        </table>
       </div>
 
       <div className="text-center text-muted small mb-2">
@@ -276,29 +277,23 @@ function App() {
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title">What is Piper?</h5>
+                <h5 className="modal-title">What is Supertonic?</h5>
                 <button type="button" className="btn-close" aria-label="Close"
                   onClick={() => stateUpdater(draft => {draft.showInfoBox = false})}></button>
               </div>
               <div className="modal-body">
                 <p>
-                  Piper is a collection of high-quality, open-source text-to-speech voices developed by
-                  the <a target="_blank" href="https://github.com/rhasspy/piper">Piper Project</a>,
-                  powered by machine learning technology.
+                  Supertonic is a collection of AI-powered text-to-speech voices developed by Supertone, Inc.
+                  (<a target="_blank" href="https://github.com/supertone-inc/supertonic">GitHub</a>
+                  , <a target="_blank" href="https://huggingface.co/Supertone/supertonic">HuggingFace</a>).
                   These voices are synthesized in-browser, requiring no cloud subscriptions, and are entirely
                   free to use.
+                </p>
+                <p>
                   You can use them to read aloud web pages and documents with
                   the <a target="_blank" href="https://readaloud.app">Read Aloud</a> extension,
                   or make them generally available to all browser apps through
-                  the <a target="_blank" href="https://ttstool.com/redirect.html?target=piper-tts-extension">Piper TTS</a> extension.
-                </p>
-                <p>
-                  Each of the voice packs is a machine learning model capable of synthesizing one or more
-                  distinct voices.  Each pack must be separately installed.
-                  Due to the substantial size of these voice packs, it is advisable to install only those
-                  that you intend to use.
-                  To assist in your selection, you can refer to the "Popularity" ranking, which indicates the
-                  preferred choices among users.
+                  the <a target="_blank" href="https://ttstool.com/redirect.html?target=supertonic-tts-extension">Supertonic TTS</a> extension.
                 </p>
               </div>
             </div>
@@ -327,40 +322,39 @@ function App() {
     })
   }
 
-  function toggleExpanded(voiceKey: string) {
-    stateUpdater(draft => {
-      draft.isExpanded[voiceKey] = !draft.isExpanded[voiceKey]
+  function onInstall() {
+    navigator.storage.persist()
+      .then(granted => console.info("Persistent storage:", granted))
+      .catch(console.error)
+    install(state.installables!).subscribe({
+      next({ loaded, total }) {
+        stateUpdater(draft => {
+          draft.loadState = {
+            type: 'installing',
+            progress: total != null
+              ? Math.round(100 * loaded / total) + '%'
+              : printMegabytes(loaded)
+          }
+        })
+      },
+      complete() {
+        stateUpdater(draft => {
+          draft.loadState = { type: "installed" }
+        })
+      },
+      error(err) {
+        reportError(err)
+      }
     })
   }
 
-  async function onInstall(voice: MyVoice, onProgress: (percent: number) => void) {
-    storage.requestPersistence()
-      .then(granted => console.info("Persistent storage:", granted))
-      .catch(console.error)
+  async function onUninstall() {
+    if (!confirm("Are you sure you want to uninstall?")) return;
     try {
+      await synthesizer?.dispose()
+      await uninstall()
       stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.installState = "installing"
-      })
-      const {model, modelConfig} = await installVoice(voice, onProgress)
-      stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.installState = "installed"
-      })
-    }
-    catch (err) {
-      reportError(err)
-    }
-  }
-
-  async function onDelete(voiceKey: string) {
-    if (!confirm("Are you sure you want to uninstall this voice?")) return;
-    try {
-      synthesizers.get(voiceKey)?.dispose()
-      synthesizers.delete(voiceKey)
-      await deleteVoice(voiceKey)
-      stateUpdater(draft => {
-        const voiceDraft = draft.voiceList!.find(x => x.key == voiceKey)!
-        voiceDraft.loadState = "not-loaded"
-        voiceDraft.installState = "not-installed"
+        draft.loadState = { type: "not-installed" }
       })
     }
     catch (err) {
@@ -449,28 +443,16 @@ function App() {
     playAudio: PlayAudio,
     callback(method: string, args?: Record<string, unknown>): void
   }) {
-    const {modelId, speakerName} = parseAdvertisedVoiceName(voiceName)
-    const voice = state.voiceList!.find(({key}) => key.endsWith('-' + modelId))
-    if (!voice) throw new Error("Voice not found")
+    const voiceId = parseAdvertisedVoiceName(voiceName)
+    appendActivityLog(`Synthesizing '${text.slice(0,50).replace(/\s+/g,' ')}...' using voice ${voiceId}`)
 
-    const speakerId = immediate(() => {
-      if (speakerName) {
-        if (!(speakerName in voice.speaker_id_map)) throw new Error("Speaker name not found")
-        return voice.speaker_id_map[speakerName]
-      }
-    })
-
-    appendActivityLog(`Synthesizing '${text.slice(0,50).replace(/\s+/g,' ')}...' using ${voice.name} [${voice.quality}] ${speakerName ?? ''}`)
-
-    const synth = synthesizers.get(voice.key) ?? immediate(() => {
-      appendActivityLog(`Initializing ${voice.name} [${voice.quality}], please wait...`)
-      const tmp = makeSynthesizer(voice.key)
-      synthesizers.set(voice.key, tmp)
-      return tmp
-    })
+    if (!synthesizer) {
+      appendActivityLog(`Initializing, please wait...`)
+      synthesizer = makeSynthesizer()
+    }
 
     currentSpeech?.cancel()
-    const speech = currentSpeech = makeSpeech(synth, {speakerId, text, playAudio}, {
+    const speech = currentSpeech = makeSpeech(synthesizer, {voiceId, text, numSteps: state.numSteps, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
       }
@@ -482,22 +464,29 @@ function App() {
 
     immediate(async () => {
       try {
-        try {
-          stateUpdater(draft => {
-            draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loading"
-          })
-          await synth.readyPromise
-        }
-        finally {
-          stateUpdater(draft => {
-            draft.voiceList!.find(x => x.key == voice.key)!.loadState = "loaded"
-          })
+        switch (state.loadState?.type) {
+          case 'installed':
+            try {
+              stateUpdater(draft => {
+                draft.loadState = { type: "loading" }
+              })
+              await synthesizer!.readyPromise
+            }
+            finally {
+              stateUpdater(draft => {
+                draft.loadState = { type: "loaded" }
+              })
+            }
+            break
+          case 'loaded':
+            break
+          default:
+            throw new Error('Synthesizer not ready')
         }
 
-        const start = Date.now()
         try {
           stateUpdater(draft => {
-            draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers++
+            draft.loadState = { type: 'in-use' }
           })
           notifyCaller("onStart", {sentenceStartIndicies: speech.sentenceStartIndicies})
           await speech.play()
@@ -505,13 +494,7 @@ function App() {
         }
         finally {
           stateUpdater(draft => {
-            draft.voiceList!.find(x => x.key == voice.key)!.numActiveUsers--
-          })
-          const duration = Date.now() - start
-          updateStats(stats => {
-            if (!stats.voiceUsage) stats.voiceUsage = {}
-            const hashKey = voice.key + (speakerName ?? "")
-            stats.voiceUsage[hashKey] = (stats.voiceUsage[hashKey] ?? 0) + duration
+            draft.loadState = { type: 'loaded'}
           })
         }
       }
@@ -610,31 +593,4 @@ function App() {
       draft.test.current = null
     })
   }
-}
-
-
-
-function InstallButton({voice, onInstall}: {
-  voice: MyVoice
-  onInstall(voice: MyVoice, onProgress: (percent: number) => void): void
-}) {
-  const [percent, setPercent] = React.useState<number>(0)
-
-  React.useEffect(() => {
-    if (voice.installState == "not-installed") setPercent(0)
-  }, [voice.installState])
-
-  const text = immediate(() => {
-    switch (voice.installState) {
-      case "not-installed": return "Install"
-      case "installing": return Math.round(percent) + "%"
-      case "installed": return "100%"
-    }
-  })
-
-  return (
-    <button type="button" className="btn btn-success btn-sm"
-      disabled={voice.installState != "not-installed"}
-      onClick={() => onInstall(voice, setPercent)}>{text}</button>
-  )
 }

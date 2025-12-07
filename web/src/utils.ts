@@ -98,3 +98,19 @@ export function makeWav(_chunks: Array<{pcmData: PcmData, appendSilenceSeconds: 
   //WAV blob
   return new Blob([header, samples], {type: "audio/wav"})
 }
+
+export function getContentLengths(urls: string[]) {
+  return Promise.allSettled(
+    urls.map(async url => {
+      const res = await fetch(url, { method: 'HEAD' })
+      if (!res.ok) throw new Error(`Server return ${res.status}`)
+      const contentLength = res.headers.get('content-length')
+      if (!contentLength) throw new Error(`No content-length header`)
+      return Number(contentLength)
+    })
+  )
+}
+
+export function printMegabytes(bytes: number) {
+  return Number(bytes / 1_000_000).toFixed(1) + ' MB'
+}

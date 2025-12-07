@@ -23,9 +23,7 @@ export default {
   supertonicRepoPath,
 
   installables: [
-    ...voiceList.map(voice =>
-      `voice_styles/${voice.id}.json`
-    ),
+    ...voiceList.map(voice => voice.stylePath),
     ...[
       'tts.json',
       'unicode_indexer.json',
@@ -33,9 +31,7 @@ export default {
       'text_encoder.onnx',
       'vector_estimator.onnx',
       'vocoder.onnx'
-    ].map(file =>
-      `${onnxDir}/${file}`
-    )
+    ].map(file => `${onnxDir}/${file}`)
   ],
   onnxDir,
   voiceList,
