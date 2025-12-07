@@ -51,11 +51,22 @@ export function install(items: Installable[]): rxjs.Observable<{ loaded: number,
             rxjs.exhaustMap(res =>
               new rxjs.Observable<number>(subscriber => {
                 const stream = wrapStream(res.body!, chunk => subscriber.next(chunk.byteLength))
+                let streamConsumed = false
                 cache.put(item.url, new Response(stream, res)).then(
-                  () => subscriber.complete(),
-                  err => subscriber.error(err)
+                  () => {
+                    streamConsumed = true
+                    subscriber.complete()
+                  },
+                  err => {
+                    streamConsumed = true
+                    subscriber.error(err)
+                  }
                 )
-                return () => stream.cancel('unsubscribed').catch(console.error)
+                return () => {
+                  if (!streamConsumed) {
+                    stream.cancel('unsubscribed').catch(console.error)
+                  }
+                }
               })
             )
           )

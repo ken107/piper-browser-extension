@@ -1,7 +1,7 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import * as ort from "onnxruntime-web/wasm"
+import * as ort from "onnxruntime-web"
 import config from "./config"
-import { loadTextToSpeech, loadVoiceStyle, TextToSpeech } from "./supertonic"
+import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from "./supertonic"
 import { PcmData } from "./types"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency > 2
@@ -9,6 +9,8 @@ ort.env.wasm.numThreads = navigator.hardwareConcurrency > 2
   : navigator.hardwareConcurrency;
 
 ort.env.wasm.wasmPaths = config.ortWasmPaths
+
+console.info('Using', ort.env.wasm.numThreads, 'of', navigator.hardwareConcurrency, 'threads')
 
 
 class TransferableResult {
@@ -34,6 +36,21 @@ addEventListener("message", event => {
 })
 
 
+const voiceStyles = new Map<string, Promise<Style>>()
+
+function getVoiceStyle(voiceId: string) {
+  let promise = voiceStyles.get(voiceId)
+  if (!promise) {
+    const voice = config.voiceList.find(voice => voice.id == voiceId)
+    if (!voice) {
+      throw new Error('Voice not found')
+    }
+    voiceStyles.set(voiceId, promise = loadVoiceStyle([voice.stylePath]))
+  }
+  return promise
+}
+
+
 let engine: { textToSpeech: TextToSpeech, cfgs: any } | undefined
 
 async function initialize(args: Record<string, unknown>) {
@@ -41,12 +58,21 @@ async function initialize(args: Record<string, unknown>) {
     throw new Error('Already initialized')
   }
 
-  const { sessionOptions } = args
+  try {
+    engine = await loadTextToSpeech(config.onnxDir, {
+      executionProviders: ['webgpu'],
+      graphOptimizationLevel: 'all'
+    })
+    return 'webgpu'
+  } catch (err) {
+    console.info('Fail webgpu, falling back to wasm', err)
 
-  engine = await loadTextToSpeech(
-    config.onnxDir,
-    sessionOptions as ort.InferenceSession.SessionOptions | undefined
-  )
+    engine = await loadTextToSpeech(config.onnxDir, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all'
+    })
+    return 'wasm'
+  }
 }
 
 async function infer(args: Record<string, unknown>) {
@@ -61,13 +87,7 @@ async function infer(args: Record<string, unknown>) {
     throw new Error('Bad args')
   }
 
-  const voice = config.voiceList.find(voice => voice.id == voiceId)
-  if (!voice) {
-    throw new Error('Voice not found')
-  }
-
-  const style = await loadVoiceStyle([voice.stylePath])
-
+  const style = await getVoiceStyle(voiceId)
   const { wav, duration } = await engine.textToSpeech._infer([text], style, numSteps)
   const pcmData: PcmData = {
     samples: wav,

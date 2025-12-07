@@ -12,9 +12,6 @@
       h2 {
         margin-bottom: .5em;
       }
-      td {
-        vertical-align: middle;
-      }
       .link {
         color: blue;
         text-decoration: underline;
@@ -28,7 +25,7 @@
       }
     </style>
     <script>
-      if ("serviceWorker" in navigator && location.hostname != "localhost") {
+      if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("./sw.js")
       }
     </script>

@@ -50,12 +50,19 @@ async function removeOldCaches() {
 }
 
 async function handleFetch(request: Request) {
-  let res = await caches.match(request, {ignoreSearch: true});
-  if (res) return res;
-  res = await fetch(request)
-  if (res.ok && request.url.startsWith(config.ortWasmPaths)) {
-    caches.open(config.ortCacheKey)
-      .then(cache => cache.put(request, res.clone()))
+  //if localhost, use the cache only for ort and supertonic assets
+  if (location.hostname != 'localhost'
+    || request.url.startsWith(config.ortWasmPaths)
+    || request.url.startsWith(config.supertonicRepoPath)) {
+    const cachedResponse = await caches.match(request, { ignoreSearch: true })
+    if (cachedResponse) return cachedResponse
   }
-  return res
+  const fetchResponse = await fetch(request)
+  //populate on initial fetch
+  if (fetchResponse.ok && request.url.startsWith(config.ortWasmPaths)) {
+    const clonedResponse = fetchResponse.clone()
+    caches.open(config.ortCacheKey)
+      .then(cache => cache.put(request, clonedResponse))
+  }
+  return fetchResponse
 }

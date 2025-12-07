@@ -147,7 +147,7 @@ function App() {
             <select className="form-control mt-3" name="voice">
               <option value="">Select a voice</option>
               {isInstalled && config.voiceList.map(voice =>
-                <option key={voice.id} value={voice.id}>{voice.id}</option>
+                <option key={voice.id} value={`Supertonic ${voice.id}`}>{voice.id}</option>
               )}
             </select>
             <div className="d-flex align-items-center mt-3">
@@ -215,7 +215,7 @@ function App() {
                     <span className="ms-2">{installSizeText}</span>
                   </>}
                   {isInstalled == true &&
-                    <button type="button" className="btn btn-danger"
+                    <button type="button" className="btn btn-outline-danger"
                       disabled={state.loadState?.type == 'loading' || state.loadState?.type == 'in-use'}
                       onClick={onUninstall}>Uninstall</button>
                   }
@@ -466,17 +466,14 @@ function App() {
       try {
         switch (state.loadState?.type) {
           case 'installed':
-            try {
-              stateUpdater(draft => {
-                draft.loadState = { type: "loading" }
-              })
-              await synthesizer!.readyPromise
-            }
-            finally {
-              stateUpdater(draft => {
-                draft.loadState = { type: "loaded" }
-              })
-            }
+            stateUpdater(draft => {
+              draft.loadState = { type: "loading" }
+            })
+            const executionProvider = await synthesizer!.readyPromise
+            stateUpdater(draft => {
+              draft.loadState = { type: "loaded" }
+            })
+            appendActivityLog('Execution provider: ' + executionProvider)
             break
           case 'loaded':
             break

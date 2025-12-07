@@ -104,7 +104,7 @@ function makePlaylist(
     onSentence(startIndex: number, endIndex: number): void
   }
 ) {
-  let sentenceIndex = 0
+  let sentenceIndex = -1
 
   return {
     next(): Playing {
