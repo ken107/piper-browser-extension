@@ -10,24 +10,10 @@ import config from "./config";
 //Otherwise our new cache bucket might get populated with old files from the browser cache (or
 //any intermediary network caches)
 
-const myCache: Record<string, string[]> = {
-  'app-v2': [
-    '/?v=2',
-    '/index.html?v=2',
-    '/bundle.js?v=2',
-    '/inference-worker.js?v=2',
-  ],
-  'bootstrap-v1': [
-    '/bootstrap.min.css?v=1',
-  ],
-}
-
-//populated on initial fetch
-myCache[config.ortCacheKey] = []
-
-//managed by application
-myCache[config.supertonicCacheKey] = []
-
+//3 caches:
+//-> app cache populated on install, file list from manifest, append ver
+//-> ort cache populated on initial fetch, ver already part of URL
+//-> supertonic cache managed by application
 
 self.addEventListener('install', (event: ExtendableEvent) => event.waitUntil(populateCache()))
 self.addEventListener('activate', (event: ExtendableEvent) => event.waitUntil(removeOldCaches()))
@@ -35,22 +21,24 @@ self.addEventListener('fetch', (event: FetchEvent) => event.respondWith(handleFe
 
 
 async function populateCache() {
-  for (const key in myCache) {
-    if (!await caches.has(key)) {
-      const cache = await caches.open(key)
-      await cache.addAll(myCache[key])
-    }
+  if (!await caches.has(config.appCacheKey)) {
+    const response = await fetch('/asset-manifest.json')
+    const manifest = await response.json()
+    const appFiles = Object.values(manifest).concat('')
+    const cache = await caches.open(config.appCacheKey)
+    await cache.addAll(appFiles.map(file => `/${file}?v=${config.appVer}`))
   }
 }
 
 async function removeOldCaches() {
   for (const key of await caches.keys()) {
-    if (!(key in myCache)) await caches.delete(key)
+    if (![config.appCacheKey, config.ortCacheKey, config.supertonicCacheKey].includes(key))
+      await caches.delete(key)
   }
 }
 
 async function handleFetch(request: Request) {
-  //if localhost, use the cache only for ort and supertonic assets
+  //if localhost, use cache only for ort and supertonic assets, always fetch app assets
   if (location.hostname != 'localhost'
     || request.url.startsWith(config.ortWasmPaths)
     || request.url.startsWith(config.supertonicRepoPath)) {

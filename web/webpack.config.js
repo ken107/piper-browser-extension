@@ -1,5 +1,6 @@
 const path = require('path')
 const CopyPlugin = require('copy-webpack-plugin')
+const { WebpackManifestPlugin } = require('webpack-manifest-plugin')
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin
 
 module.exports = (env, argv) => ({
@@ -38,6 +39,9 @@ module.exports = (env, argv) => ({
       patterns: [
         'dist',
       ]
+    }),
+    new WebpackManifestPlugin({
+      fileName: 'asset-manifest.json'
     }),
     ...(env.analyze ? [new BundleAnalyzerPlugin()] : [])
   ],

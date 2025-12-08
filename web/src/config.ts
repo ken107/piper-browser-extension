@@ -1,5 +1,6 @@
 import { MyVoice } from "./types"
 
+const appVer = '3'
 const ortVer = '1.23.2'
 const supertonicVer = '0'
 const supertonicRepoPath = `https://huggingface.co/Supertone/supertonic/resolve/main`
@@ -16,6 +17,9 @@ const voiceList: MyVoice[] = [
 }))
 
 export default {
+  appVer,
+  appCacheKey: `app-${appVer}`,
+
   ortCacheKey: `ort-${ortVer}`,
   ortWasmPaths: `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ortVer}/dist/`,
 
