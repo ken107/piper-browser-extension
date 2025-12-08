@@ -1,11 +1,11 @@
 {
   "extension_name": {
-    "message": "Piper Text-to-Speech Voices"
+    "message": "Supertonic Text-to-Speech Voices"
   },
   "extension_short_name": {
-    "message": "Piper TTS"
+    "message": "Supertonic TTS"
   },
   "extension_description": {
-    "message": "High quality neural text-to-speech voices from Piper, synthesized locally in your browser"
+    "message": "AI text-to-speech voices by Supertonic, synthesized locally in your browser"
   }
 }

@@ -1,5 +1,5 @@
 
-const piperHost = {
+const supertonicHost = {
   serviceReadyTopic: {
     callbacks: [],
     publish() {
@@ -21,7 +21,7 @@ const piperHost = {
   },
   async sendRequest(method, args) {
     const {error, result} = await chrome.runtime.sendMessage({
-      to: "piper-host",
+      to: "supertonic-host",
       type: "request",
       id: String(Math.random()),
       method,
@@ -33,13 +33,13 @@ const piperHost = {
 
 
 
-//process messages from piper-host
+//process messages from supertonic-host
 
 importScripts("message-dispatcher.js")
 
 const extDispatcher = makeDispatcher("service-worker", {
-  piperServiceReady() {
-    piperHost.serviceReadyTopic.publish()
+  supertonicServiceReady() {
+    supertonicHost.serviceReadyTopic.publish()
   },
   onStart({speechId}) {
     chrome.ttsEngine.sendTtsEvent(speechId, {type: "start"})
@@ -62,13 +62,13 @@ chrome.runtime.onMessage.addListener(extDispatcher.dispatch)
 //extension button action
 
 chrome.action.onClicked.addListener(() => {
-  piperHost.ready({requestFocus: true})
+  supertonicHost.ready({requestFocus: true})
     .catch(console.error)
 })
 
 chrome.runtime.onInstalled.addListener(details => {
   if (details.reason == "install") {
-    piperHost.ready({requestFocus: true})
+    supertonicHost.ready({requestFocus: true})
       .catch(console.error)
   }
 })
@@ -88,8 +88,8 @@ chrome.ttsEngine.onSpeak.addListener(async (utterance, options, sendTtsEvent) =>
       sendTtsEvent({type: "dummy"})
     })
     console.debug("speechId", speechId)
-    await piperHost.ready({requestFocus: false})
-    await piperHost.sendRequest("speak", {speechId, utterance, ...options})
+    await supertonicHost.ready({requestFocus: false})
+    await supertonicHost.sendRequest("speak", {speechId, utterance, ...options})
   }
   catch (err) {
     console.error(err)
@@ -98,16 +98,16 @@ chrome.ttsEngine.onSpeak.addListener(async (utterance, options, sendTtsEvent) =>
 })
 
 chrome.ttsEngine.onPause.addListener(() => {
-  piperHost.sendRequest("pause")
+  supertonicHost.sendRequest("pause")
     .catch(console.error)
 })
 
 chrome.ttsEngine.onResume.addListener(() => {
-  piperHost.sendRequest("resume")
+  supertonicHost.sendRequest("resume")
     .catch(console.error)
 })
 
 chrome.ttsEngine.onStop.addListener(() => {
-  piperHost.sendRequest("stop")
+  supertonicHost.sendRequest("stop")
     .catch(console.error)
 })

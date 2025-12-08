@@ -1,15 +1,15 @@
 
-let piperService
+let supertonicService
 let speechId
 
 
-//handle messages from piper-service
+//handle messages from supertonic-service
 
-const domDispatcher = makeDispatcher("piper-host", {
+const domDispatcher = makeDispatcher("supertonic-host", {
   advertiseVoices({voices}, sender) {
     chrome.ttsEngine.updateVoices(voices)
-    piperService = sender
-    notifyServiceWorker("piperServiceReady")
+    supertonicService = sender
+    notifyServiceWorker("supertonicServiceReady")
   },
   onStart(args) {
     notifyServiceWorker("onStart", {...args, speechId})
@@ -30,7 +30,7 @@ window.addEventListener("message", event => {
   const sender = {
     sendRequest(method, args) {
       const id = String(Math.random())
-      send({to: "piper-service", type: "request", id, method, args})
+      send({to: "supertonic-service", type: "request", id, method, args})
       return domDispatcher.waitForResponse(id)
     }
   }
@@ -40,7 +40,7 @@ window.addEventListener("message", event => {
 
 //handle messages from extension service worker
 
-const extDispatcher = makeDispatcher("piper-host", {
+const extDispatcher = makeDispatcher("supertonic-host", {
   async areYouThere({requestFocus}) {
     if (requestFocus) {
       const tab = await chrome.tabs.getCurrent()
@@ -52,18 +52,18 @@ const extDispatcher = makeDispatcher("piper-host", {
     return true
   },
   speak(args) {
-    if (!piperService) throw new Error("No service")
+    if (!supertonicService) throw new Error("No service")
     speechId = args.speechId
-    return piperService.sendRequest("speak", args)
+    return supertonicService.sendRequest("speak", args)
   },
   pause(args) {
-    return piperService.sendRequest("pause", args)
+    return supertonicService.sendRequest("pause", args)
   },
   resume(args) {
-    return piperService.sendRequest("resume", args)
+    return supertonicService.sendRequest("resume", args)
   },
   stop(args) {
-    return piperService.sendRequest("stop", args)
+    return supertonicService.sendRequest("stop", args)
   }
 })
 
