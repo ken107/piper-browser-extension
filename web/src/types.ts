@@ -1,15 +1,15 @@
 
 export interface MyVoice {
-  id: string
-  lang: string
-  stylePath: string
+  readonly id: string
+  readonly lang: string
+  readonly stylePath: string
 }
 
 export type LoadState = {
-  type: "not-installed"|"installed"|"loading"|"loaded"|"in-use"
+  readonly type: "not-installed"|"installed"|"loading"|"loaded"|"in-use"
 } | {
-  type: "installing"
-  progress: string
+  readonly type: "installing"
+  readonly progress: string
 }
 
 export interface PcmData {

@@ -15,7 +15,7 @@ const supertonicHost = {
       if (!await this.sendRequest("areYouThere", {requestFocus})) throw "Absent"
     }
     catch (err) {
-      await chrome.tabs.create({url: "index.html?showTest=1", pinned: true, active: requestFocus})
+      await chrome.tabs.create({url: "index.html", pinned: true, active: requestFocus})
       await new Promise(f => this.serviceReadyTopic.subscribeOnce(f))
     }
   },

@@ -11,20 +11,18 @@ import { immediate, makeWav } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
-const query = new URLSearchParams(location.search)
 let synthesizer: ReturnType<typeof makeSynthesizer> | undefined
 let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 
 
 function App() {
-  const [state, stateUpdater] = useImmer({
-    loadState: null as LoadState|null,
-    activityLog: "",
-    showInfoBox: false,
-    test: {
-      current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
-      downloadUrl: null as string|null
-    }
+  const [loadState, setLoadState] = React.useState<LoadState | null>(null)
+  const [activityLog, setActivityLog] = React.useState("")
+  const [showTestForm, setShowTestForm] = React.useState(() => self == top)
+  const [showInfoBox, setShowInfoBox] = React.useState(false)
+  const [test, testUpdater] = useImmer({
+    current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
+    downloadUrl: null as string|null
   })
 
   const refs = {
@@ -32,9 +30,9 @@ function App() {
   }
 
   const isInstalled = React.useMemo<boolean|null>(() => {
-    if (state.loadState == null)
+    if (loadState == null)
       return null
-    switch (state.loadState.type) {
+    switch (loadState.type) {
       case 'in-use':
       case 'installed':
       case 'loaded':
@@ -45,29 +43,29 @@ function App() {
         return false
     }
   }, [
-    state.loadState
+    loadState
   ])
 
   const loadStateText = React.useMemo(() => {
-    if (state.loadState == null)
+    if (loadState == null)
       return null
-    switch (state.loadState.type) {
+    switch (loadState.type) {
       case 'not-installed': return { text: 'Not Installed', statusColor: 'lightgray' }
-      case 'installing': return { text: 'Installing ' + state.loadState.progress, statusColor: 'orange' }
+      case 'installing': return { text: 'Installing ' + loadState.progress, statusColor: 'orange' }
       case "installed": return { text: "Installed", statusColor: 'blue' }
       case "loading": return { text: 'Loading', statusColor: 'orange' }
       case "loaded": return { text: "Ready", statusColor: 'limegreen' }
       case 'in-use': return { text: 'In Use', statusColor: 'red' }
     }
   }, [
-    state.loadState
+    loadState
   ])
 
 
   //startup
   React.useEffect(() => {
     getInstallState()
-      .then(installState => stateUpdater(draft => { draft.loadState = installState }))
+      .then(installState => setLoadState(installState))
       .catch(reportError)
   }, [])
 
@@ -97,7 +95,7 @@ function App() {
   React.useEffect(() => {
     refs.activityLog.current.scrollTop = refs.activityLog.current.scrollHeight
   }, [
-    state.activityLog
+    activityLog
   ])
 
   //numSteps
@@ -114,58 +112,61 @@ function App() {
   return (
     <div className="container">
       <div className="text-end text-muted small mt-1 mb-4">
+        {isInstalled && !showTestForm && <>
+          <span className="link"
+            onClick={() => setShowTestForm(true)}>Show test form</span>
+          <span className="mx-2">|</span>
+        </>}
         <span className="link"
-          onClick={() => stateUpdater(draft => {draft.showInfoBox = true})}>What is Supertonic?</span>
+          onClick={() => setShowInfoBox(true)}>What is Supertonic?</span>
       </div>
 
-      {(query.has("showTest") ? query.get("showTest") != "0" : top == self) &&
-        <div>
-          <h2 className="text-muted">Test</h2>
-          <form>
-            <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
-            <select className="form-control mt-3" name="voice">
-              <option value="">Select a voice</option>
-              {isInstalled && config.voiceList.map(voice =>
-                <option key={voice.id} value={`Supertonic ${voice.id}`}>{voice.id}</option>
-              )}
-            </select>
-            <div className="d-flex align-items-center mt-3">
-              {state.test.current == null &&
-                <button type="button" className="btn btn-primary" onClick={onTestSpeak}>Speak</button>
-              }
-              {state.test.current?.type == "speaking" &&
-                <button type="button" className="btn btn-primary" disabled>Speak</button>
-              }
-              {location.hostname == "localhost" && state.test.current?.type == "speaking" &&
-                <>
-                  <button type="button" className="btn btn-secondary ms-1" onClick={onPause}>Pause</button>
-                  <button type="button" className="btn btn-secondary ms-1" onClick={onResume}>Resume</button>
-                  <button type="button" className="btn btn-secondary ms-1" onClick={onForward}>Forward</button>
-                  <button type="button" className="btn btn-secondary ms-1" onClick={onRewind}>Rewind</button>
-                  <button type="button" className="btn btn-secondary ms-1"
-                    onClick={() => onSeek({index: Number(prompt())})}>Seek</button>
-                </>
-              }
-              {state.test.current == null &&
-                <button type="button" className="btn btn-secondary ms-1" onClick={onTestSynthesize}>Download</button>
-              }
-              {state.test.current?.type == "synthesizing" &&
-                <button type="button" className="btn btn-secondary ms-1" disabled>{state.test.current.percent}%</button>
-              }
-              {state.test.current &&
-                <button type="button" className="btn btn-secondary ms-1" onClick={onStopTest}>Stop</button>
-              }
-              {state.test.downloadUrl &&
-                <audio src={state.test.downloadUrl} controls className="ms-1" />
-              }
-            </div>
-          </form>
-        </div>
-      }
+      {showTestForm && <div>
+        <h2 className="text-muted">Test</h2>
+        <form>
+          <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
+          <select className="form-control mt-3" name="voice">
+            <option value="">Select a voice</option>
+            {isInstalled && config.voiceList.map(voice =>
+              <option key={voice.id} value={`Supertonic ${voice.id}`}>{voice.id}</option>
+            )}
+          </select>
+          <div className="d-flex align-items-center mt-3">
+            {test.current == null &&
+              <button type="button" className="btn btn-primary" onClick={onTestSpeak}>Speak</button>
+            }
+            {test.current?.type == "speaking" &&
+              <button type="button" className="btn btn-primary" disabled>Speak</button>
+            }
+            {location.hostname == "localhost" && test.current?.type == "speaking" &&
+              <>
+                <button type="button" className="btn btn-secondary ms-1" onClick={onPause}>Pause</button>
+                <button type="button" className="btn btn-secondary ms-1" onClick={onResume}>Resume</button>
+                <button type="button" className="btn btn-secondary ms-1" onClick={onForward}>Forward</button>
+                <button type="button" className="btn btn-secondary ms-1" onClick={onRewind}>Rewind</button>
+                <button type="button" className="btn btn-secondary ms-1"
+                  onClick={() => onSeek({index: Number(prompt())})}>Seek</button>
+              </>
+            }
+            {test.current == null &&
+              <button type="button" className="btn btn-secondary ms-1" onClick={onTestSynthesize}>Download</button>
+            }
+            {test.current?.type == "synthesizing" &&
+              <button type="button" className="btn btn-secondary ms-1" disabled>{test.current.percent}%</button>
+            }
+            {test.current &&
+              <button type="button" className="btn btn-secondary ms-1" onClick={onStopTest}>Stop</button>
+            }
+            {test.downloadUrl &&
+              <audio src={test.downloadUrl} controls className="ms-1" />
+            }
+          </div>
+        </form>
+      </div>}
 
-      <div>
+      <div style={{display: activityLog ? '' : 'none'}}>
         <h2 className="text-muted">Activity Log</h2>
-        <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={state.activityLog} />
+        <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={activityLog} />
       </div>
 
       <div>
@@ -189,13 +190,13 @@ function App() {
                 <div className="mt-4">
                   {isInstalled == false && <>
                     <button type="button" className="btn btn-primary"
-                      disabled={state.loadState?.type == 'installing'}
+                      disabled={loadState?.type == 'installing'}
                       onClick={onInstall}>Install</button>
                     <span className="ms-2">264 MB</span>
                   </>}
                   {isInstalled == true &&
                     <button type="button" className="btn btn-outline-danger"
-                      disabled={state.loadState?.type == 'loading' || state.loadState?.type == 'in-use'}
+                      disabled={loadState?.type == 'loading' || loadState?.type == 'in-use'}
                       onClick={onUninstall}>Uninstall</button>
                   }
                 </div>
@@ -204,7 +205,7 @@ function App() {
                 <label htmlFor="numSteps">Quality (Steps)</label>
                 <input type="number" className="form-control" id="numSteps" required min="1" max="16"
                   value={numSteps}
-                  disabled={state.loadState?.type == 'in-use'}
+                  disabled={loadState?.type == 'in-use'}
                   onChange={event => setNumSteps(Number(event.target.value))} />
                 <div className="form-text">
                   Decrease quality if you experience speech gaps.
@@ -251,15 +252,15 @@ function App() {
         <span>&copy; <a target="_blank" href="https://lsdsoftware.com" className="muted-link">LSD Software</a></span>
       </div>
 
-      {state.showInfoBox &&
+      {showInfoBox &&
         <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
-          onClick={e => e.target == e.currentTarget && stateUpdater(draft => {draft.showInfoBox = false})}>
+          onClick={e => e.target == e.currentTarget && setShowInfoBox(false)}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">What is Supertonic?</h5>
                 <button type="button" className="btn-close" aria-label="Close"
-                  onClick={() => stateUpdater(draft => {draft.showInfoBox = false})}></button>
+                  onClick={() => setShowInfoBox(false)}></button>
               </div>
               <div className="modal-body">
                 <p>
@@ -297,9 +298,7 @@ function App() {
   }
 
   function appendActivityLog(text: string) {
-    stateUpdater(draft => {
-      draft.activityLog += text + '\n'
-    })
+    setActivityLog(log => log + text + '\n')
   }
 
   function onInstall() {
@@ -308,14 +307,11 @@ function App() {
       .catch(console.error)
     install().subscribe({
       next(progress) {
-        stateUpdater(draft => {
-          draft.loadState = { type: 'installing', progress }
-        })
+        setLoadState({ type: 'installing', progress })
       },
       complete() {
-        stateUpdater(draft => {
-          draft.loadState = { type: "installed" }
-        })
+        setLoadState({ type: "installed" })
+        setShowTestForm(true)
       },
       error(err) {
         reportError(err)
@@ -328,9 +324,7 @@ function App() {
     try {
       await synthesizer?.dispose()
       await uninstall()
-      stateUpdater(draft => {
-        draft.loadState = { type: "not-installed" }
-      })
+      setLoadState({ type: "not-installed" })
     }
     catch (err) {
       reportError(err)
@@ -421,11 +415,13 @@ function App() {
     const voiceId = parseAdvertisedVoiceName(voiceName)
     appendActivityLog(`Synthesizing '${text.slice(0,50).replace(/\s+/g,' ')}...' using voice ${voiceId}`)
 
+    //create synthesizer if not yet
     if (!synthesizer) {
       appendActivityLog(`Initializing, please wait...`)
       synthesizer = makeSynthesizer()
     }
 
+    //create speech
     currentSpeech?.cancel()
     const speech = currentSpeech = makeSpeech(synthesizer, {voiceId, text, numSteps, playAudio}, {
       onSentence(startIndex, endIndex) {
@@ -439,15 +435,12 @@ function App() {
 
     immediate(async () => {
       try {
-        switch (state.loadState?.type) {
+        //wait synthesizer ready
+        switch (loadState?.type) {
           case 'installed':
-            stateUpdater(draft => {
-              draft.loadState = { type: "loading" }
-            })
+            setLoadState({ type: "loading" })
             const executionProvider = await synthesizer!.readyPromise
-            stateUpdater(draft => {
-              draft.loadState = { type: "loaded" }
-            })
+            setLoadState({ type: "loaded" })
             appendActivityLog('Execution provider: ' + executionProvider)
             break
           case 'loaded':
@@ -456,18 +449,15 @@ function App() {
             throw new Error('Synthesizer not ready')
         }
 
+        //play speech
         try {
-          stateUpdater(draft => {
-            draft.loadState = { type: 'in-use' }
-          })
+          setLoadState({ type: 'in-use' })
           notifyCaller("onStart", {sentenceStartIndicies: speech.sentenceStartIndicies})
           await speech.play()
           notifyCaller("onEnd")
         }
         finally {
-          stateUpdater(draft => {
-            draft.loadState = { type: 'loaded'}
-          })
+          setLoadState({ type: 'loaded'})
         }
       }
       catch (err: any) {
@@ -511,17 +501,19 @@ function App() {
   function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {
     const form = (event.target as HTMLButtonElement).form
     if (form?.text.value && form.voice.value) {
-      if (state.test.downloadUrl) URL.revokeObjectURL(state.test.downloadUrl)
-      stateUpdater(draft => {
-        draft.test.downloadUrl = null
-        draft.test.current = {type: "speaking"}
+      if (test.downloadUrl) {
+        URL.revokeObjectURL(test.downloadUrl)
+      }
+      testUpdater(draft => {
+        draft.downloadUrl = null
+        draft.current = {type: "speaking"}
       })
       onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
         send({method, args}: {method: string, args?: Record<string, unknown>}) {
           console.log(method, args)
           if (method == "onEnd") {
-            stateUpdater(draft => {
-              draft.test.current = null
+            testUpdater(draft => {
+              draft.current = null
             })
           }
         }
@@ -534,24 +526,29 @@ function App() {
     const text = form.text.value
     const voiceName = form.voice.value
     if (text && voiceName) {
-      if (state.test.downloadUrl) URL.revokeObjectURL(state.test.downloadUrl)
-      stateUpdater(draft => {
-        draft.test.downloadUrl = null
-        draft.test.current = {type: "synthesizing", percent: 0}
+      if (test.downloadUrl) {
+        URL.revokeObjectURL(test.downloadUrl)
+      }
+      testUpdater(draft => {
+        draft.downloadUrl = null
+        draft.current = {type: "synthesizing", percent: 0}
       })
       onSynthesize({text, voiceName}, {
         send({method, args}: {method: string, args?: Record<string, unknown>}) {
           console.log(method, args)
           if (method == "onEnd") {
-            stateUpdater(draft => {
-              draft.test.current = null
-              if (args?.audioBlob instanceof Blob) draft.test.downloadUrl = URL.createObjectURL(args.audioBlob)
+            testUpdater(draft => {
+              draft.current = null
+              if (args?.audioBlob instanceof Blob) {
+                draft.downloadUrl = URL.createObjectURL(args.audioBlob)
+              }
             })
           }
           else if (method == "onSentence") {
-            stateUpdater(draft => {
-              if (draft.test.current?.type == "synthesizing" && typeof args?.startIndex == "number")
-                draft.test.current.percent = Math.round(100 * args.startIndex / text.length)
+            testUpdater(draft => {
+              if (draft.current?.type == "synthesizing" && typeof args?.startIndex == "number") {
+                draft.current.percent = Math.round(100 * args.startIndex / text.length)
+              }
             })
           }
         }
@@ -561,8 +558,8 @@ function App() {
 
   function onStopTest() {
     onStop()
-    stateUpdater(draft => {
-      draft.test.current = null
+    testUpdater(draft => {
+      draft.current = null
     })
   }
 }
