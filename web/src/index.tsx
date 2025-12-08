@@ -6,8 +6,8 @@ import config from "./config"
 import { advertiseVoices, getInstallState, install, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
-import { Installable, LoadState, PcmData, PlayAudio } from "./types"
-import { getContentLengths, immediate, makeWav, printMegabytes } from "./utils"
+import { LoadState, PcmData, PlayAudio } from "./types"
+import { immediate, makeWav } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -18,7 +18,6 @@ let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 
 function App() {
   const [state, stateUpdater] = useImmer({
-    installables: null as Installable[]|null,
     loadState: null as LoadState|null,
     numSteps: 5,
     activityLog: "",
@@ -54,26 +53,15 @@ function App() {
     if (state.loadState == null)
       return null
     switch (state.loadState.type) {
-      case 'not-installed': return { text: 'Not Installed', statusColor: 'gray' }
-      case 'installing': return { text: 'Installing ' + state.loadState.progress, statusColor: 'yellow' }
+      case 'not-installed': return { text: 'Not Installed', statusColor: 'lightgray' }
+      case 'installing': return { text: 'Installing ' + state.loadState.progress, statusColor: 'orange' }
       case "installed": return { text: "Installed", statusColor: 'blue' }
-      case "loading": return { text: 'Loading', statusColor: 'yellow' }
-      case "loaded": return { text: "Ready", statusColor: 'green' }
+      case "loading": return { text: 'Loading', statusColor: 'orange' }
+      case "loaded": return { text: "Ready", statusColor: 'limegreen' }
       case 'in-use': return { text: 'In Use', statusColor: 'red' }
     }
   }, [
     state.loadState
-  ])
-
-  const installSizeText = React.useMemo(() => {
-    if (state.installables == null)
-      return null
-    const size = state.installables.reduce((sum: number|null, {size}) => sum != null && size != null ? sum + size : null, 0)
-    if (size == null)
-      return null
-    return printMegabytes(size)
-  }, [
-    state.installables
   ])
 
 
@@ -90,24 +78,6 @@ function App() {
       advertiseVoices(isInstalled ? config.voiceList : [])
   }, [
     isInstalled
-  ])
-
-  //installables
-  React.useEffect(() => {
-    if (isInstalled != null) {
-      if (!isInstalled && !state.installables) {
-        getContentLengths(config.installables).then(results =>
-          stateUpdater(draft => {
-            draft.installables = results.map((result, i) => ({
-              url: config.installables[i],
-              size: result.status == 'fulfilled' ? result.value : null
-            }))
-          })
-        ).catch(reportError)
-      }
-    }
-  }, [
-    isInstalled, state.installables
   ])
 
   //handle requests
@@ -212,7 +182,7 @@ function App() {
                     <button type="button" className="btn btn-primary"
                       disabled={state.loadState?.type == 'installing'}
                       onClick={onInstall}>Install</button>
-                    <span className="ms-2">{installSizeText}</span>
+                    <span className="ms-2">264 MB</span>
                   </>}
                   {isInstalled == true &&
                     <button type="button" className="btn btn-outline-danger"
@@ -227,7 +197,7 @@ function App() {
                   value={state.numSteps}
                   onChange={event => stateUpdater(draft => { draft.numSteps = Number(event.target.value) })} />
                 <div className="form-text">
-                  Decrease quality if you experience speech gaps between sentences.
+                  Decrease quality if you experience speech gaps.
                 </div>
               </td>
             </tr>
@@ -326,15 +296,10 @@ function App() {
     navigator.storage.persist()
       .then(granted => console.info("Persistent storage:", granted))
       .catch(console.error)
-    install(state.installables!).subscribe({
-      next({ loaded, total }) {
+    install().subscribe({
+      next(progress) {
         stateUpdater(draft => {
-          draft.loadState = {
-            type: 'installing',
-            progress: total != null
-              ? Math.round(100 * loaded / total) + '%'
-              : printMegabytes(loaded)
-          }
+          draft.loadState = { type: 'installing', progress }
         })
       },
       complete() {

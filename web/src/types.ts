@@ -5,11 +5,6 @@ export interface MyVoice {
   stylePath: string
 }
 
-export interface Installable {
-  url: string
-  size: number|null
-}
-
 export type LoadState = {
   type: "not-installed"|"installed"|"loading"|"loaded"|"in-use"
 } | {
