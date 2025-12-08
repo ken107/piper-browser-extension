@@ -41,7 +41,6 @@ module.exports = (env, argv) => ({
     }),
     ...(env.analyze ? [new BundleAnalyzerPlugin()] : [])
   ],
-  watch: true,
   watchOptions: {
     aggregateTimeout: 600,
     ignored: /node_modules/

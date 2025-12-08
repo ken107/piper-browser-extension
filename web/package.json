@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "description": "Provides Supertonic text-to-speech voices as a browser extension",
   "scripts": {
-    "build-debug": "webpack --mode=development",
+    "build-debug": "webpack --mode=development --watch",
     "build-release": "webpack --mode=production",
-    "prod-sync": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/supertonic.ttstool.com",
-    "deploy-prod": "npm run build-release && npm run prod-sync"
+    "deploy-prod": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/supertonic.ttstool.com"
   },
   "repository": {
     "type": "git",
