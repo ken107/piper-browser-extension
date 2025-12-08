@@ -19,7 +19,6 @@ let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 function App() {
   const [state, stateUpdater] = useImmer({
     loadState: null as LoadState|null,
-    numSteps: 5,
     activityLog: "",
     showInfoBox: false,
     test: {
@@ -99,6 +98,16 @@ function App() {
     refs.activityLog.current.scrollTop = refs.activityLog.current.scrollHeight
   }, [
     state.activityLog
+  ])
+
+  //numSteps
+  const [numSteps, setNumSteps] = React.useState(() =>
+    Number(localStorage.getItem('numSteps') || '5')
+  )
+  React.useEffect(() => {
+    localStorage.setItem('numSteps', String(numSteps))
+  }, [
+    numSteps
   ])
 
 
@@ -194,8 +203,9 @@ function App() {
               <td valign="top" style={{width: '50%'}}>
                 <label htmlFor="numSteps">Quality (Steps)</label>
                 <input type="number" className="form-control" id="numSteps" required min="1" max="16"
-                  value={state.numSteps}
-                  onChange={event => stateUpdater(draft => { draft.numSteps = Number(event.target.value) })} />
+                  value={numSteps}
+                  disabled={state.loadState?.type == 'in-use'}
+                  onChange={event => setNumSteps(Number(event.target.value))} />
                 <div className="form-text">
                   Decrease quality if you experience speech gaps.
                 </div>
@@ -417,7 +427,7 @@ function App() {
     }
 
     currentSpeech?.cancel()
-    const speech = currentSpeech = makeSpeech(synthesizer, {voiceId, text, numSteps: state.numSteps, playAudio}, {
+    const speech = currentSpeech = makeSpeech(synthesizer, {voiceId, text, numSteps, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
       }
