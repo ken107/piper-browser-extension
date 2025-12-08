@@ -17,7 +17,7 @@ class TransferableResult {
   constructor(public result: unknown, public transfer: Transferable[]) {}
 }
 
-const dispatcher = makeDispatcher("piper-worker", {initialize, infer, dispose})
+const dispatcher = makeDispatcher("supertonic-worker", {initialize, infer, dispose})
 
 addEventListener("message", event => {
   //console.debug(event.data)

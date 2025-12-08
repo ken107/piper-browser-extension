@@ -100,7 +100,7 @@ export async function uninstall(): Promise<void> {
 export function advertiseVoices(voiceList: readonly MyVoice[]) {
   parent?.postMessage(<Message>{
     type: "notification",
-    to: "piper-host",
+    to: "supertonic-host",
     method: "advertiseVoices",
     args: {
       voices: voiceList.map(voice => ({
@@ -135,7 +135,7 @@ export const sampler = immediate(() => {
 
 
 export const messageDispatcher = immediate(() => {
-  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("piper-service", {})
+  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("supertonic-service", {})
   addEventListener("message", event => {
     const send = (msg: unknown) => event.source!.postMessage(msg, {targetOrigin: event.origin})
     dispatcher.dispatch(event.data, {send}, send)

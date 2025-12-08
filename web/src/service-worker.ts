@@ -11,11 +11,11 @@ import config from "./config";
 //any intermediary network caches)
 
 const myCache: Record<string, string[]> = {
-  'app-v1': [
-    '/?v=1',
-    '/index.html?v=1',
-    '/bundle.js?v=1',
-    '/inference-worker.js?v=1',
+  'app-v2': [
+    '/?v=2',
+    '/index.html?v=2',
+    '/bundle.js?v=2',
+    '/inference-worker.js?v=2',
   ],
   'bootstrap-v1': [
     '/bootstrap.min.css?v=1',
