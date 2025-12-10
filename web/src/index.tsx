@@ -318,6 +318,10 @@ function App() {
         rxjs.defer(() => {
           if (!synthesizer.current) synthesizer.current = makeSynthesizer()
           return synthesizer.current.readyPromise
+            .catch(err => {
+              synthesizer.current = null
+              throw err
+            })
         })
       )
     ).subscribe({
@@ -477,8 +481,15 @@ function App() {
         //wait synthesizer ready
         if ((loadState satisfies 'installed'|'loaded') == 'installed') {
           setLoadState("loading")
-          await synthesizer.current!.readyPromise
-          setLoadState("loaded")
+          try {
+            await synthesizer.current!.readyPromise
+            setLoadState("loaded")
+          }
+          catch (err) {
+            synthesizer.current = null
+            setLoadState('installed')
+            throw err
+          }
         }
 
         //play speech
