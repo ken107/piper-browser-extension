@@ -13,8 +13,13 @@ export async function getInstallState(): Promise<boolean> {
 }
 
 
+export async function uninstall(): Promise<void> {
+  await caches.delete(config.supertonicCacheKey)
+}
+
+
 export function advertiseVoices(voiceList: readonly MyVoice[]) {
-  parent?.postMessage(<Message>{
+  (parent ?? opener)?.postMessage(<Message>{
     type: "notification",
     to: "supertonic-host",
     method: "advertiseVoices",

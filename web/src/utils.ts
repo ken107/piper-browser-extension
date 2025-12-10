@@ -85,3 +85,7 @@ export function printFileSize(bytes: number) {
   const kb = bytes / 1_000
   return kb.toPrecision(3) + ' KB'
 }
+
+export function assertNever(value: never): never {
+  throw new Error(`Unhandled case: ${value}`);
+}

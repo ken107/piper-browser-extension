@@ -4,20 +4,17 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
+import { advertiseVoices, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
 import { LoadState, PcmData, PlayAudio } from "./types"
-import { immediate, makeWav, printFileSize } from "./utils"
+import { assertNever, immediate, makeWav, printFileSize } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
-let synthesizer: ReturnType<typeof makeSynthesizer> | undefined
-let currentSpeech: ReturnType<typeof makeSpeech>|undefined
-
 
 function App() {
-  const [loadState, setLoadState] = React.useState<LoadState>('not-installed')
+  const [loadState, setLoadState] = React.useState<LoadState|null>(null)
   const [activityLog, setActivityLog] = React.useState("")
   const [showTestForm, setShowTestForm] = React.useState(() => self == top)
   const [showInfoBox, setShowInfoBox] = React.useState(false)
@@ -27,30 +24,35 @@ function App() {
     downloadUrl: null as string|null
   })
 
-  const refs = {
-    activityLog: React.useRef<HTMLTextAreaElement>(null!),
-  }
+  const activityLogEl = React.useRef<HTMLTextAreaElement>(null)
+  const synthesizer = React.useRef<ReturnType<typeof makeSynthesizer>>(null)
+  const speech = React.useRef<ReturnType<typeof makeSpeech>>(null)
 
   const isInstalled = React.useMemo(() => {
+    if (loadState == null) return null
     switch (loadState) {
       case 'not-installed':
-      case 'installing':
-        return false
-      default:
-        return true
+      case 'installing': return false
+      case 'installed':
+      case 'loading':
+      case 'loaded':
+      case 'in-use': return true
+      default: assertNever(loadState)
     }
   }, [
     loadState
   ])
 
   const loadStateText = React.useMemo(() => {
+    if (loadState == null) return null
     switch (loadState) {
       case 'not-installed': return { text: 'Not Installed', statusColor: 'lightgray' }
-      case "installing": return { text: "Installing", statusColor: 'orange' }
+      case 'installing': return { text: 'Installing', statusColor: 'orange' }
       case "installed": return { text: "Installed", statusColor: 'blue' }
       case "loading": return { text: 'Loading', statusColor: 'orange' }
       case "loaded": return { text: "Ready", statusColor: 'limegreen' }
       case 'in-use': return { text: 'In Use', statusColor: 'red' }
+      default: assertNever(loadState)
     }
   }, [
     loadState
@@ -66,7 +68,8 @@ function App() {
 
   //advertise voices
   React.useEffect(() => {
-    advertiseVoices(isInstalled ? config.voiceList : [])
+    if (isInstalled != null)
+      advertiseVoices(isInstalled ? config.voiceList : [])
   }, [
     isInstalled
   ])
@@ -87,7 +90,8 @@ function App() {
 
   //auto-scroll activity log
   React.useEffect(() => {
-    refs.activityLog.current.scrollTop = refs.activityLog.current.scrollHeight
+    if (activityLogEl.current)
+      activityLogEl.current.scrollTop = activityLogEl.current.scrollHeight
   }, [
     activityLog
   ])
@@ -158,10 +162,10 @@ function App() {
         </form>
       </div>}
 
-      <div style={{display: activityLog ? '' : 'none'}}>
+      {activityLog && <div>
         <h2 className="text-muted">Activity Log</h2>
-        <textarea className="form-control" disabled rows={4} ref={refs.activityLog} value={activityLog} />
-      </div>
+        <textarea className="form-control" disabled rows={4} ref={activityLogEl} value={activityLog} />
+      </div>}
 
       <div>
         <h2 className="text-muted">Install</h2>
@@ -190,7 +194,7 @@ function App() {
                 <div className="mt-4">
                   {!isInstalled && <>
                     <button type="button" className="btn btn-primary"
-                      disabled={loadState == 'installing'}
+                      disabled={loadState == null || loadState == 'installing'}
                       onClick={onInstall}>Install</button>
                     <span className="ms-2">(264 MB)</span>
                   </>}
@@ -311,7 +315,10 @@ function App() {
 
     rxjs.fromEvent(navigator.serviceWorker, 'message', (e: MessageEvent) => e).pipe(
       rxjs.takeUntil(
-        rxjs.defer(() => (synthesizer ?? (synthesizer = makeSynthesizer())).readyPromise)
+        rxjs.defer(() => {
+          if (!synthesizer.current) synthesizer.current = makeSynthesizer()
+          return synthesizer.current.readyPromise
+        })
       )
     ).subscribe({
       next({ data: message }) {
@@ -340,11 +347,11 @@ function App() {
   async function onUninstall() {
     if (!confirm("Are you sure you want to uninstall?")) return;
     try {
-      if (synthesizer) {
-        await synthesizer.dispose()
-        synthesizer = undefined
+      if (synthesizer.current) {
+        await synthesizer.current.dispose()
+        synthesizer.current = null
       }
-      await caches.delete(config.supertonicCacheKey)
+      await uninstall()
       setLoadState("not-installed")
     }
     catch (err) {
@@ -437,48 +444,48 @@ function App() {
     appendActivityLog(`Synthesizing '${text.slice(0,50).replace(/\s+/g,' ')}...' using voice ${voiceId}`)
 
     //create synthesizer if not yet
-    if (!synthesizer) {
+    if (!synthesizer.current) {
       appendActivityLog(`Initializing, please wait...`)
-      synthesizer = makeSynthesizer()
+      synthesizer.current = makeSynthesizer()
     }
 
     //create speech
-    currentSpeech?.cancel()
-    const speech = currentSpeech = makeSpeech(synthesizer, {voiceId, text, numSteps, playAudio}, {
+    speech.current?.cancel()
+    const thisSpeech = speech.current = makeSpeech(synthesizer.current, {voiceId, text, numSteps, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
       }
     })
     function notifyCaller(method: string, args?: Record<string, unknown>) {
-      if (speech == currentSpeech)
+      if (speech.current == thisSpeech)
         callback(method, args)
+    }
+
+    if (loadState == null) throw new Error('Service not yet available')
+    switch (loadState) {
+      case 'not-installed':
+      case 'installing': throw new Error('Voices not installed')
+      case 'installed': break
+      case 'loading': throw new Error('Synthesizer not ready')
+      case 'loaded': break
+      case 'in-use': throw new Error('Synthesizer busy')
+      default: assertNever(loadState)
     }
 
     immediate(async () => {
       try {
         //wait synthesizer ready
-        switch (loadState) {
-          case 'not-installed':
-            throw new Error('Voices not installed')
-          case 'installed':
-            setLoadState("loading")
-            const executionProvider = await synthesizer!.readyPromise
-            setLoadState("loaded")
-            appendActivityLog('Execution provider: ' + executionProvider)
-            break
-          case 'loading':
-            throw new Error('Synthesizer not ready')
-          case 'loaded':
-            break
-          case 'in-use':
-            throw new Error('Synthesizer busy')
+        if ((loadState satisfies 'installed'|'loaded') == 'installed') {
+          setLoadState("loading")
+          await synthesizer.current!.readyPromise
+          setLoadState("loaded")
         }
 
         //play speech
         try {
           setLoadState('in-use')
-          notifyCaller("onStart", {sentenceStartIndicies: speech.sentenceStartIndicies})
-          await speech.play()
+          notifyCaller("onStart", {sentenceStartIndicies: thisSpeech.sentenceStartIndicies})
+          await thisSpeech.play()
           notifyCaller("onEnd")
         }
         finally {
@@ -492,35 +499,35 @@ function App() {
         }
       }
       finally {
-        if (currentSpeech == speech) currentSpeech = undefined
+        if (speech.current == thisSpeech) speech.current = null
       }
     })
   }
 
   function onPause() {
-    currentSpeech?.pause()
+    speech.current?.pause()
   }
 
   function onResume() {
-    currentSpeech?.resume()
+    speech.current?.resume()
   }
 
   function onStop() {
-    currentSpeech?.cancel()
-    currentSpeech = undefined
+    speech.current?.cancel()
+    speech.current = null
   }
 
   function onForward() {
-    currentSpeech?.forward()
+    speech.current?.forward()
   }
 
   function onRewind() {
-    currentSpeech?.rewind()
+    speech.current?.rewind()
   }
 
   function onSeek({index}: Record<string, unknown>) {
     if (typeof index != "number") throw new Error("Bad args")
-    currentSpeech?.seek(index)
+    speech.current?.seek(index)
   }
 
   function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {
