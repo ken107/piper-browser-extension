@@ -5,12 +5,7 @@ export interface MyVoice {
   readonly stylePath: string
 }
 
-export type LoadState = {
-  readonly type: "not-installed"|"installed"|"loading"|"loaded"|"in-use"
-} | {
-  readonly type: "installing"
-  readonly progress: string
-}
+export type LoadState = "not-installed"|"installing"|"installed"|"loading"|"loaded"|"in-use"
 
 export interface PcmData {
   readonly samples: Float32Array

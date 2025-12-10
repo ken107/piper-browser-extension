@@ -1,13 +1,14 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom/client"
+import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, getInstallState, install, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
+import { advertiseVoices, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
 import { LoadState, PcmData, PlayAudio } from "./types"
-import { immediate, makeWav } from "./utils"
+import { immediate, makeWav, printFileSize } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -16,10 +17,11 @@ let currentSpeech: ReturnType<typeof makeSpeech>|undefined
 
 
 function App() {
-  const [loadState, setLoadState] = React.useState<LoadState | null>(null)
+  const [loadState, setLoadState] = React.useState<LoadState>('not-installed')
   const [activityLog, setActivityLog] = React.useState("")
   const [showTestForm, setShowTestForm] = React.useState(() => self == top)
   const [showInfoBox, setShowInfoBox] = React.useState(false)
+  const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number|null }[]>([])
   const [test, testUpdater] = useImmer({
     current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
     downloadUrl: null as string|null
@@ -29,29 +31,22 @@ function App() {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
   }
 
-  const isInstalled = React.useMemo<boolean|null>(() => {
-    if (loadState == null)
-      return null
-    switch (loadState.type) {
-      case 'in-use':
-      case 'installed':
-      case 'loaded':
-      case 'loading':
-        return true
-      case 'installing':
+  const isInstalled = React.useMemo(() => {
+    switch (loadState) {
       case 'not-installed':
+      case 'installing':
         return false
+      default:
+        return true
     }
   }, [
     loadState
   ])
 
   const loadStateText = React.useMemo(() => {
-    if (loadState == null)
-      return null
-    switch (loadState.type) {
+    switch (loadState) {
       case 'not-installed': return { text: 'Not Installed', statusColor: 'lightgray' }
-      case 'installing': return { text: 'Installing ' + loadState.progress, statusColor: 'orange' }
+      case "installing": return { text: "Installing", statusColor: 'orange' }
       case "installed": return { text: "Installed", statusColor: 'blue' }
       case "loading": return { text: 'Loading', statusColor: 'orange' }
       case "loaded": return { text: "Ready", statusColor: 'limegreen' }
@@ -65,14 +60,13 @@ function App() {
   //startup
   React.useEffect(() => {
     getInstallState()
-      .then(installState => setLoadState(installState))
+      .then(yes => setLoadState(yes ? 'installed' : 'not-installed'))
       .catch(reportError)
   }, [])
 
   //advertise voices
   React.useEffect(() => {
-    if (isInstalled != null)
-      advertiseVoices(isInstalled ? config.voiceList : [])
+    advertiseVoices(isInstalled ? config.voiceList : [])
   }, [
     isInstalled
   ])
@@ -187,16 +181,22 @@ function App() {
                     <span className="ms-1">{loadStateText.text}</span>
                   </>}
                 </div>
+                {installProgress.map(({ file, loaded, total }) => <div className="mt-1">
+                  {file} {total
+                    ? '[' + printFileSize(total) + '] ' + Math.round(100 * loaded / total) + '%'
+                    : printFileSize(loaded)
+                  }
+                </div>)}
                 <div className="mt-4">
-                  {isInstalled == false && <>
+                  {!isInstalled && <>
                     <button type="button" className="btn btn-primary"
-                      disabled={loadState?.type == 'installing'}
+                      disabled={loadState == 'installing'}
                       onClick={onInstall}>Install</button>
-                    <span className="ms-2">264 MB</span>
+                    <span className="ms-2">(264 MB)</span>
                   </>}
-                  {isInstalled == true &&
+                  {isInstalled &&
                     <button type="button" className="btn btn-outline-danger"
-                      disabled={loadState?.type == 'loading' || loadState?.type == 'in-use'}
+                      disabled={loadState == 'loading' || loadState == 'in-use'}
                       onClick={onUninstall}>Uninstall</button>
                   }
                 </div>
@@ -205,7 +205,7 @@ function App() {
                 <label htmlFor="numSteps">Quality (Steps)</label>
                 <input type="number" className="form-control" id="numSteps" required min="1" max="16"
                   value={numSteps}
-                  disabled={loadState?.type == 'in-use'}
+                  disabled={!isInstalled || loadState == 'loading' || loadState == 'in-use'}
                   onChange={event => setNumSteps(Number(event.target.value))} />
                 <div className="form-text">
                   Decrease quality if you experience speech gaps.
@@ -305,15 +305,33 @@ function App() {
     navigator.storage.persist()
       .then(granted => console.info("Persistent storage:", granted))
       .catch(console.error)
-    install().subscribe({
-      next(progress) {
-        setLoadState({ type: 'installing', progress })
+
+    setLoadState('installing')
+    setInstallProgress([])
+
+    rxjs.fromEvent(navigator.serviceWorker, 'message', (e: MessageEvent) => e).pipe(
+      rxjs.takeUntil(
+        rxjs.defer(() => (synthesizer ?? (synthesizer = makeSynthesizer())).readyPromise)
+      )
+    ).subscribe({
+      next({ data: message }) {
+        if (message.type == 'fetch-progress') {
+          const { url, loaded, total } = message as { url: string, loaded: number, total: number|null }
+          const file = url.split('/').pop()!
+          setInstallProgress(draft => {
+            const bucket = draft.find(x => x.file == file)
+            if (bucket) bucket.loaded = loaded
+            else draft.push({ file, loaded, total })
+          })
+        }
       },
       complete() {
-        setLoadState({ type: "installed" })
+        setLoadState('loaded')
+        setInstallProgress([])
         setShowTestForm(true)
       },
       error(err) {
+        setLoadState('not-installed')
         reportError(err)
       }
     })
@@ -322,9 +340,12 @@ function App() {
   async function onUninstall() {
     if (!confirm("Are you sure you want to uninstall?")) return;
     try {
-      await synthesizer?.dispose()
-      await uninstall()
-      setLoadState({ type: "not-installed" })
+      if (synthesizer) {
+        await synthesizer.dispose()
+        synthesizer = undefined
+      }
+      await caches.delete(config.supertonicCacheKey)
+      setLoadState("not-installed")
     }
     catch (err) {
       reportError(err)
@@ -436,28 +457,32 @@ function App() {
     immediate(async () => {
       try {
         //wait synthesizer ready
-        switch (loadState?.type) {
+        switch (loadState) {
+          case 'not-installed':
+            throw new Error('Voices not installed')
           case 'installed':
-            setLoadState({ type: "loading" })
+            setLoadState("loading")
             const executionProvider = await synthesizer!.readyPromise
-            setLoadState({ type: "loaded" })
+            setLoadState("loaded")
             appendActivityLog('Execution provider: ' + executionProvider)
             break
+          case 'loading':
+            throw new Error('Synthesizer not ready')
           case 'loaded':
             break
-          default:
-            throw new Error('Synthesizer not ready')
+          case 'in-use':
+            throw new Error('Synthesizer busy')
         }
 
         //play speech
         try {
-          setLoadState({ type: 'in-use' })
+          setLoadState('in-use')
           notifyCaller("onStart", {sentenceStartIndicies: speech.sentenceStartIndicies})
           await speech.play()
           notifyCaller("onEnd")
         }
         finally {
-          setLoadState({ type: 'loaded'})
+          setLoadState('loaded')
         }
       }
       catch (err: any) {

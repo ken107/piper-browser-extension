@@ -97,4 +97,5 @@ async function dispose(args: Record<string, unknown>) {
   if (results.some(x => x.status == 'rejected')) {
     console.error('Fail to dispose', results)
   }
+  engine = undefined
 }

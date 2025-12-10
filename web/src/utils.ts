@@ -10,30 +10,6 @@ export function lazy<T>(func: () => T) {
   return () => value ?? (value = func())
 }
 
-export function wrapStream<T>(sourceStream: ReadableStream<T>, onChunk: (chunk: T) => void) {
-  const reader = sourceStream.getReader();
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
-            break;
-          }
-          onChunk(value);
-          controller.enqueue(value);
-        }
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-    cancel(reason) {
-      reader.cancel(reason);
-    }
-  });
-}
-
 export function wait<T>(obs: rxjs.Observable<T>, value: T) {
   return rxjs.firstValueFrom(obs.pipe(rxjs.filter(x => x == value)))
 }
@@ -97,4 +73,15 @@ export function makeWav(_chunks: Array<{pcmData: PcmData, appendSilenceSeconds: 
 
   //WAV blob
   return new Blob([header, samples], {type: "audio/wav"})
+}
+
+export function printFileSize(bytes: number) {
+  if (bytes < 0) return '0 B'
+  if (bytes < 1_000) return bytes + ' B'
+  if (bytes >= 1_000_000) {
+    const mb = bytes / 1_000_000
+    return mb.toPrecision(3) + ' MB'
+  }
+  const kb = bytes / 1_000
+  return kb.toPrecision(3) + ' KB'
 }

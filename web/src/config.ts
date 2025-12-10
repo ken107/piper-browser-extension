@@ -1,6 +1,6 @@
 import { MyVoice } from "./types"
 
-const appVer = '4'
+const appVer = '8'
 const ortVer = '1.23.2'
 const supertonicVer = '0'
 const supertonicRepoPath = `https://huggingface.co/Supertone/supertonic/resolve/main`
@@ -27,16 +27,11 @@ export default {
   supertonicRepoPath,
 
   installables: [
-    ...voiceList.map(voice => voice.stylePath),
-    ...[
-      'tts.json',
-      'unicode_indexer.json',
-      'duration_predictor.onnx',
-      'text_encoder.onnx',
-      'vector_estimator.onnx',
-      'vocoder.onnx'
-    ].map(file => `${onnxDir}/${file}`)
-  ],
+    'duration_predictor.onnx',
+    'text_encoder.onnx',
+    'vector_estimator.onnx',
+    'vocoder.onnx'
+  ].map(file => `${onnxDir}/${file}`),
   onnxDir,
   voiceList,
 
