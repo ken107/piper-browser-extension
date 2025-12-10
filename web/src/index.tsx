@@ -4,7 +4,7 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
+import { advertiseVoices, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, serviceWorkerReady, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
 import { LoadState, PcmData, PlayAudio } from "./types"
@@ -61,9 +61,15 @@ function App() {
 
   //startup
   React.useEffect(() => {
-    getInstallState()
-      .then(yes => setLoadState(yes ? 'installed' : 'not-installed'))
-      .catch(reportError)
+    serviceWorkerReady.then(() => {
+      getInstallState()
+        .then(yes => setLoadState(yes ? 'installed' : 'not-installed'))
+        .catch(reportError)
+
+      //prefetch all voice styles into cache for offline access
+      Promise.all(config.voiceList.map(x => fetch(x.stylePath)))
+        .catch(console.error)
+    })
   }, [])
 
   //advertise voices

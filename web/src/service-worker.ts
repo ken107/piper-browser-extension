@@ -10,28 +10,31 @@ import config from "./config";
 //Otherwise our new cache bucket might get populated with old files from the browser cache (or
 //any intermediary network caches)
 
-//3 caches:
-//-> app cache populated on install, file list from manifest, append ver
-//-> ort cache populated on initial fetch, ver already part of URL
-//-> supertonic voice styles cached on install, rest on initial fetch, no ver in URL
+//3 caches, cache on fetch only, versioning:
+//app cache: append ver to URL
+//ort cache: ver already part of URL
+//supertonic: no ver in URL
 
-self.addEventListener('install', (event: ExtendableEvent) => event.waitUntil(populateCache()))
-self.addEventListener('activate', (event: ExtendableEvent) => event.waitUntil(removeOldCaches()))
-self.addEventListener('fetch', (event: FetchEvent) => event.respondWith(handleFetch(event.request)))
+self.addEventListener('activate', (event: ExtendableEvent) =>
+  event.waitUntil(
+    Promise.all([
+      removeOldCaches(),
+      self.clients.claim()
+    ])
+  )
+)
 
+self.addEventListener('fetch', (event: FetchEvent) => {
+  if (event.request.url.startsWith('http://localhost'))
+    return;
+  if (event.request.url.startsWith(self.location.origin))
+    event.respondWith(handleFetch(event.request, config.appCacheKey))
+  else if (event.request.url.startsWith(config.ortWasmPaths))
+    event.respondWith(handleFetch(event.request, config.ortCacheKey))
+  else if (event.request.url.startsWith(config.supertonicRepoPath))
+    event.respondWith(handleFetch(event.request, config.supertonicCacheKey))
+})
 
-async function populateCache() {
-  if (!await caches.has(config.appCacheKey)) {
-    const manifest = await fetch('/asset-manifest.json').then(r => r.json())
-    const appFiles = Object.values(manifest).concat('')
-    const cache = await caches.open(config.appCacheKey)
-    await cache.addAll(appFiles.map(file => `/${file}?v=${config.appVer}`))
-  }
-  if (!await caches.has(config.supertonicCacheKey)) {
-    const cache = await caches.open(config.supertonicCacheKey)
-    await cache.addAll(config.voiceList.map(voice => voice.stylePath))
-  }
-}
 
 async function removeOldCaches() {
   for (const key of await caches.keys()) {
@@ -40,27 +43,28 @@ async function removeOldCaches() {
   }
 }
 
-async function handleFetch(request: Request) {
-  const isProd = location.hostname != 'localhost'
-  const isOrt = request.url.startsWith(config.ortWasmPaths)
-  const isSupertonic = request.url.startsWith(config.supertonicRepoPath)
+async function handleFetch(request: Request, cacheKey: string) {
+  const cachedResponse = await caches.match(request, { ignoreSearch: true })
+  if (cachedResponse) return cachedResponse
 
-  if (isProd || isOrt || isSupertonic) {
-    const cachedResponse = await caches.match(request, { ignoreSearch: true })
-    if (cachedResponse) return cachedResponse
+  //append ver to app URLs
+  if (cacheKey == config.appCacheKey) {
+    request = new Request(
+      request.url.split('?', 1)[0] + `?v=${config.appVer}`,
+      new Proxy(request, {
+        get: (target, prop) => prop == 'mode' ? undefined : Reflect.get(target, prop)
+      }
+    ))
   }
 
   const fetchResponse = await fetch(request)
-  if (fetchResponse.ok && fetchResponse.body && (isOrt || isSupertonic)) {
-    const cache = await caches.open(isOrt ? config.ortCacheKey : config.supertonicCacheKey)
-    const [stream1, stream2] = fetchResponse.body.tee()
-    const tracker = trackProgress(request.url, fetchResponse.headers.get('content-length'))
-    cache.put(request, new Response(wrapStream(stream1, tracker), fetchResponse))
-    return new Response(stream2, fetchResponse)
-  }
-  else {
-    return fetchResponse
-  }
+  if (!fetchResponse.ok || !fetchResponse.body) return fetchResponse
+
+  const cache = await caches.open(cacheKey)
+  const [stream1, stream2] = fetchResponse.body.tee()
+  const tracker = trackProgress(request.url, fetchResponse.headers.get('content-length'))
+  cache.put(request, new Response(wrapStream(stream1, tracker), fetchResponse))
+  return new Response(stream2, fetchResponse)
 }
 
 function trackProgress(url: string, contentLength: string|null) {
