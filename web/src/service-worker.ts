@@ -22,62 +22,110 @@ self.addEventListener('activate', (event: ExtendableEvent) =>
       self.clients.claim()
     ])
   )
-)
+);
 
 self.addEventListener('fetch', (event: FetchEvent) => {
-  if (event.request.url.startsWith('http://localhost'))
-    return;
-  if (event.request.url.startsWith(self.location.origin))
-    event.respondWith(handleFetch(event.request, config.appCacheKey))
-  else if (event.request.url.startsWith(config.ortWasmPaths))
-    event.respondWith(handleFetch(event.request, config.ortCacheKey))
-  else if (event.request.url.startsWith(config.supertonicRepoPath))
-    event.respondWith(handleFetch(event.request, config.supertonicCacheKey))
-})
+  const url = event.request.url;
 
+  if (url.startsWith('http://localhost')) return;
+
+  if (url.startsWith(self.location.origin)) {
+    event.respondWith(handleFetch(event.request, config.appCacheKey));
+  } else if (url.startsWith(config.ortWasmPaths)) {
+    event.respondWith(handleFetch(event.request, config.ortCacheKey));
+  } else if (url.startsWith(config.supertonicRepoPath)) {
+    event.respondWith(handleFetch(event.request, config.supertonicCacheKey));
+  }
+});
 
 async function removeOldCaches() {
-  for (const key of await caches.keys()) {
-    if (![config.appCacheKey, config.ortCacheKey, config.supertonicCacheKey].includes(key))
-      await caches.delete(key)
-  }
+  const allowed = [config.appCacheKey, config.ortCacheKey, config.supertonicCacheKey];
+  const keys = await caches.keys();
+  await Promise.all(
+    keys.map(key => {
+      if (!allowed.includes(key)) return caches.delete(key);
+    })
+  );
 }
 
-async function handleFetch(request: Request, cacheKey: string) {
-  const cachedResponse = await caches.match(request, { ignoreSearch: true })
-  if (cachedResponse) return cachedResponse
+async function handleFetch(originalRequest: Request, cacheKey: string) {
+  // 1. Check Cache (ignoring search params helps hit cache even if versions change)
+  const cachedResponse = await caches.match(originalRequest, { ignoreSearch: true });
+  if (cachedResponse) return cachedResponse;
 
-  //append ver to app URLs
-  if (cacheKey == config.appCacheKey) {
-    request = new Request(
-      request.url.split('?', 1)[0] + `?v=${config.appVer}`,
-      new Proxy(request, {
-        get: (target, prop) => prop == 'mode' ? undefined : Reflect.get(target, prop)
-      }
-    ))
+  let requestToFetch = originalRequest;
+
+  // 2. Prepare Network Request
+  if (cacheKey === config.appCacheKey) {
+    const urlObj = new URL(originalRequest.url);
+    // Safer: Update 'v' param, preserve others (unless you specifically want to wipe them)
+    urlObj.searchParams.set('v', config.appVer);
+
+    // Safer: Create a clean Request object instead of using Proxy
+    requestToFetch = new Request(urlObj.toString(), {
+      method: originalRequest.method,
+      headers: originalRequest.headers,
+      mode: 'cors', // Explicitly set mode to avoid 'navigate' issues if that was the intent
+      credentials: originalRequest.credentials,
+      redirect: originalRequest.redirect,
+      referrer: originalRequest.referrer,
+    });
   }
 
-  const fetchResponse = await fetch(request)
-  if (!fetchResponse.ok || !fetchResponse.body) return fetchResponse
+  // 3. Network Call
+  const fetchResponse = await fetch(requestToFetch);
 
-  const cache = await caches.open(cacheKey)
-  const [stream1, stream2] = fetchResponse.body.tee()
-  const tracker = trackProgress(request.url, fetchResponse.headers.get('content-length'))
-  cache.put(request, new Response(wrapStream(stream1, tracker), fetchResponse))
-  return new Response(stream2, fetchResponse)
+  // Guard clause
+  if (!fetchResponse.ok || !fetchResponse.body) return fetchResponse;
+
+  // 4. Clone and Cache
+  const cache = await caches.open(cacheKey);
+  const [streamForCache, streamForBrowser] = fetchResponse.body.tee();
+
+  // Create throttled tracker
+  const tracker = trackProgress(originalRequest.url, fetchResponse.headers.get('content-length'));
+
+  // Wrap the cache stream
+  const responseToCache = new Response(wrapStream(streamForCache, tracker), {
+    headers: fetchResponse.headers, // Copy headers
+    status: fetchResponse.status,
+    statusText: fetchResponse.statusText
+  });
+
+  // Perform cache put effectively in the "background" relative to the browser response
+  // catch() allows the app to continue even if caching fails (e.g. QuotaExceeded)
+  cache.put(requestToFetch, responseToCache).catch(err => console.warn('Cache put failed', err));
+
+  return new Response(streamForBrowser, fetchResponse);
 }
 
-function trackProgress(url: string, contentLength: string|null) {
-  const total = contentLength ? Number(contentLength) : null
-  let loaded = 0
+function trackProgress(url: string, contentLength: string | null) {
+  const total = contentLength ? Number(contentLength) : 0;
+  let loaded = 0;
+  let lastUpdate = 0;
+
   return (chunk: { byteLength: number }) => {
-    loaded += chunk.byteLength
-    self.clients.matchAll().then(clients =>
-      clients.forEach(client =>
-        client.postMessage({ type: 'fetch-progress', url, loaded, total })
-      )
-    ).catch(() => {})
-  }
+    loaded += chunk.byteLength;
+    const now = Date.now();
+
+    // THROTTLE: Only update clients every 200ms or if complete
+    // This prevents flooding the JS main thread with postMessages
+    if (now - lastUpdate > 200 || (total > 0 && loaded === total)) {
+      lastUpdate = now;
+
+      // Note: matchAll is async. We don't await it here to avoid blocking the stream
+      self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({
+            type: 'fetch-progress',
+            url,
+            loaded,
+            total
+          });
+        });
+      });
+    }
+  };
 }
 
 function wrapStream<T>(sourceStream: ReadableStream<T>, onChunk: (chunk: T) => void) {
@@ -91,7 +139,9 @@ function wrapStream<T>(sourceStream: ReadableStream<T>, onChunk: (chunk: T) => v
             controller.close();
             break;
           }
+          // Pass value to tracker
           onChunk(value);
+          // Pass value to stream
           controller.enqueue(value);
         }
       } catch (error) {

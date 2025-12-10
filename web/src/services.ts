@@ -1,27 +1,7 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import * as rxjs from "rxjs"
 import config from "./config"
 import { MyVoice } from "./types"
 import { immediate } from "./utils"
-
-
-export const serviceWorkerReady = rxjs.firstValueFrom(
-  rxjs.defer(() => navigator.serviceWorker.register('./sw.js')).pipe(
-    rxjs.exhaustMap(registration => {
-      if (registration.active)
-        return rxjs.of(registration)
-
-      const sw = registration.installing || registration.waiting
-      if (!sw)
-        return rxjs.of(registration)
-
-      return rxjs.fromEvent(sw, 'statechange').pipe(
-        rxjs.find(() => sw.state == 'activated'),
-        rxjs.map(() => registration)
-      )
-    })
-  )
-)
 
 
 export async function getInstallState(): Promise<boolean> {
