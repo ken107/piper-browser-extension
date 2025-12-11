@@ -110,7 +110,7 @@ function trackProgress(url: string, contentLength: string | null) {
 
     // THROTTLE: Only update clients every 200ms or if complete
     // This prevents flooding the JS main thread with postMessages
-    if (now - lastUpdate > 200 || (total > 0 && loaded === total)) {
+    if (now - lastUpdate > 100 || (total > 0 && loaded === total)) {
       lastUpdate = now;
 
       // Note: matchAll is async. We don't await it here to avoid blocking the stream

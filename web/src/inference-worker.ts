@@ -3,6 +3,7 @@ import * as ort from "onnxruntime-web"
 import config from "./config"
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from "./supertonic"
 import { PcmData } from "./types"
+import { makeMutex } from "./utils"
 
 ort.env.wasm.numThreads = navigator.hardwareConcurrency > 2
   ? navigator.hardwareConcurrency - 1
@@ -52,6 +53,7 @@ function getVoiceStyle(voiceId: string) {
 
 
 let engine: { textToSpeech: TextToSpeech, cfgs: any } | undefined
+const mutex = makeMutex()
 
 async function initialize(args: Record<string, unknown>) {
   if (engine) {
@@ -79,7 +81,7 @@ async function infer(args: Record<string, unknown>) {
   }
 
   const style = await getVoiceStyle(voiceId)
-  const { wav, duration } = await engine.textToSpeech._infer([text], style, numSteps)
+  const { wav, duration } = await mutex.runExclusive(() => engine!.textToSpeech._infer([text], style, numSteps))
   const pcmData: PcmData = {
     samples: wav,
     sampleRate: engine.cfgs.ae.sample_rate,

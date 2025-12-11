@@ -89,3 +89,14 @@ export function printFileSize(bytes: number) {
 export function assertNever(value: never): never {
   throw new Error(`Unhandled case: ${value}`);
 }
+
+export function makeMutex() {
+  let queue: Promise<unknown> = Promise.resolve()
+  return {
+    runExclusive<T>(task: () => Promise<T>) {
+      const nextTask = queue.then(task)
+      queue = nextTask.catch(() => {})
+      return nextTask
+    }
+  }
+}
