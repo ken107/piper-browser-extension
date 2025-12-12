@@ -4,10 +4,10 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
+import { advertiseVoices, fetchVoiceList, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
-import { LoadState, PcmData, PlayAudio } from "./types"
+import { LoadState, MyVoice, PcmData, PlayAudio } from "./types"
 import { assertNever, immediate, makeWav, printFileSize } from "./utils"
 
 navigator.serviceWorker.register('./sw.js');
@@ -17,6 +17,7 @@ ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 function App() {
   const [loadState, setLoadState] = React.useState<LoadState|null>(null)
+  const [voiceList, setVoiceList] = React.useState<MyVoice[]>([])
   const [activityLog, setActivityLog] = React.useState("")
   const [showTestForm, setShowTestForm] = React.useState(() => self == top)
   const [showInfoBox, setShowInfoBox] = React.useState(false)
@@ -67,15 +68,19 @@ function App() {
       getInstallState()
         .then(yes => setLoadState(yes ? 'installed' : 'not-installed'))
         .catch(reportError)
+
+      fetchVoiceList()
+        .then(setVoiceList)
+        .catch(reportError)
     })
   }, [])
 
   //advertise voices
   React.useEffect(() => {
     if (isInstalled != null)
-      advertiseVoices(isInstalled ? config.voiceList : [])
+      advertiseVoices(isInstalled ? voiceList : [])
   }, [
-    isInstalled
+    isInstalled, voiceList
   ])
 
   //handle requests
@@ -129,7 +134,7 @@ function App() {
           <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
           <select className="form-control mt-3" name="voice">
             <option value="">Select a voice</option>
-            {isInstalled && config.voiceList.map(voice =>
+            {isInstalled && voiceList.map(voice =>
               <option key={voice.id} value={`Supertonic ${voice.id}`}>{voice.id}</option>
             )}
           </select>
@@ -234,7 +239,7 @@ function App() {
             </tr>
           </thead>
           <tbody>
-          {config.voiceList.map(voice =>
+          {voiceList.map(voice =>
             <tr key={voice.id}>
               <td>
                 <span className="me-1">{voice.id}</span>

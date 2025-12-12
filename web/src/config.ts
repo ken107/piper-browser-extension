@@ -6,22 +6,6 @@ const supertonicVer = '0'
 const supertonicRepoPath = `https://huggingface.co/Supertone/supertonic/resolve/main`
 const onnxDir = `${supertonicRepoPath}/onnx`
 
-const voiceList: MyVoice[] = [
-  { id: 'F1', lang: 'en-US' },
-  { id: 'F2', lang: 'en-US' },
-  { id: 'F3', lang: 'en-US' },
-  { id: 'F4', lang: 'en-US' },
-  { id: 'F5', lang: 'en-GB' },
-  { id: 'M1', lang: 'en-US' },
-  { id: 'M2', lang: 'en-US' },
-  { id: 'M3', lang: 'en-US' },
-  { id: 'M4', lang: 'en-US' },
-  { id: 'M5', lang: 'en-US' },
-].map(voice => ({
-  ...voice,
-  stylePath: `${supertonicRepoPath}/voice_styles/${voice.id}.json`
-}))
-
 export default {
   appVer,
   appCacheKey: `app-${appVer}`,
@@ -39,7 +23,6 @@ export default {
     'vocoder.onnx'
   ].map(file => `${onnxDir}/${file}`),
   onnxDir,
-  voiceList,
 
   numPhonemesToPrefetch: 100,
   paragraphSilenceSeconds: .75,

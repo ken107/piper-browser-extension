@@ -18,6 +18,26 @@ export async function uninstall(): Promise<void> {
 }
 
 
+export async function fetchVoiceList(): Promise<MyVoice[]> {
+  const items: Record<string, unknown>[] = await fetch('./voice-list.json').then(r => r.json())
+  return items.flatMap(item => {
+    const { id, lang, stylePath } = item
+    if (typeof id == 'string'
+      && typeof lang == 'string'
+      && (typeof stylePath == 'string' || typeof stylePath == 'undefined')) {
+      return {
+        id,
+        lang,
+        stylePath: stylePath || `${config.supertonicRepoPath}/voice_styles/${id}.json`
+      }
+    } else {
+      console.warn("Invalid voice data", item)
+      return []
+    }
+  })
+}
+
+
 export function advertiseVoices(voiceList: readonly MyVoice[]) {
   (parent ?? opener)?.postMessage(<Message>{
     type: "notification",

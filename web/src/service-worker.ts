@@ -25,16 +25,21 @@ self.addEventListener('activate', (event: ExtendableEvent) =>
 );
 
 self.addEventListener('fetch', (event: FetchEvent) => {
-  const url = event.request.url;
+  const requestUrl = new URL(event.request.url);
 
-  if (url.startsWith('http://localhost')) return;
+  //for dev, don't cache
+  if (requestUrl.hostname == 'localhost') return;
 
-  if (url.startsWith(self.location.origin)) {
-    event.respondWith(handleFetch(event, config.appCacheKey));
-  } else if (url.startsWith(config.ortWasmPaths)) {
-    event.respondWith(handleFetch(event, config.ortCacheKey));
-  } else if (url.startsWith(config.supertonicRepoPath)) {
-    event.respondWith(handleFetch(event, config.supertonicCacheKey));
+  if (requestUrl.origin == self.location.origin) {
+    if (requestUrl.pathname == '/voice-list.json') {
+      event.respondWith(handleStaleWhileRevalidate(event, config.appCacheKey));
+    } else {
+      event.respondWith(handleCacheFirst(event, config.appCacheKey));
+    }
+  } else if (event.request.url.startsWith(config.ortWasmPaths)) {
+    event.respondWith(handleCacheFirst(event, config.ortCacheKey));
+  } else if (event.request.url.startsWith(config.supertonicRepoPath)) {
+    event.respondWith(handleCacheFirst(event, config.supertonicCacheKey));
   }
 });
 
@@ -48,7 +53,7 @@ async function removeOldCaches() {
   );
 }
 
-async function handleFetch(event: FetchEvent, cacheKey: string) {
+async function handleCacheFirst(event: FetchEvent, cacheKey: string) {
   const originalRequest = event.request;
 
   // 1. Check Cache (ignoring search params helps hit cache even if versions change)
@@ -155,4 +160,38 @@ function wrapStream<T>(sourceStream: ReadableStream<T>, onChunk: (chunk: T) => v
       reader.cancel(reason);
     }
   });
+}
+
+async function handleStaleWhileRevalidate(event: FetchEvent, cacheKey: string) {
+  const request = event.request;
+  const cache = await caches.open(cacheKey);
+
+  // 1. Try to get from cache
+  const cachedResponse = await cache.match(request);
+
+  // 2. Define the network fetch logic
+  const networkFetch = fetch(request).then(networkResponse => {
+    if (!networkResponse.ok) return networkResponse;
+
+    // Fire and forget (tracked by waitUntil)
+    event.waitUntil(
+      cache.put(request, networkResponse.clone())
+        .catch(err => console.warn('SWR background update failed', err))
+    );
+
+    // Return the original response immediately (don't wait for cache.put)
+    return networkResponse;
+  });
+
+  // 3. Logic:
+  // IF CACHE HIT: Return cached immediately, let networkFetch run in background.
+  if (cachedResponse) {
+    event.waitUntil(networkFetch.catch(() => {})); // Prevent unhandled rejection
+    return cachedResponse;
+  }
+
+  // IF CACHE MISS: Return networkFetch.
+  // Because we removed the 'await cache.put' from inside the .then(),
+  // this will resolve as soon as headers are received.
+  return networkFetch;
 }
