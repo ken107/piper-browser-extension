@@ -30,11 +30,11 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   if (url.startsWith('http://localhost')) return;
 
   if (url.startsWith(self.location.origin)) {
-    event.respondWith(handleFetch(event.request, config.appCacheKey));
+    event.respondWith(handleFetch(event, config.appCacheKey));
   } else if (url.startsWith(config.ortWasmPaths)) {
-    event.respondWith(handleFetch(event.request, config.ortCacheKey));
+    event.respondWith(handleFetch(event, config.ortCacheKey));
   } else if (url.startsWith(config.supertonicRepoPath)) {
-    event.respondWith(handleFetch(event.request, config.supertonicCacheKey));
+    event.respondWith(handleFetch(event, config.supertonicCacheKey));
   }
 });
 
@@ -48,7 +48,9 @@ async function removeOldCaches() {
   );
 }
 
-async function handleFetch(originalRequest: Request, cacheKey: string) {
+async function handleFetch(event: FetchEvent, cacheKey: string) {
+  const originalRequest = event.request;
+
   // 1. Check Cache (ignoring search params helps hit cache even if versions change)
   const cachedResponse = await caches.match(originalRequest, { ignoreSearch: true });
   if (cachedResponse) return cachedResponse;
@@ -74,8 +76,6 @@ async function handleFetch(originalRequest: Request, cacheKey: string) {
 
   // 3. Network Call
   const fetchResponse = await fetch(requestToFetch);
-
-  // Guard clause
   if (!fetchResponse.ok || !fetchResponse.body) return fetchResponse;
 
   // 4. Clone and Cache
@@ -94,7 +94,10 @@ async function handleFetch(originalRequest: Request, cacheKey: string) {
 
   // Perform cache put effectively in the "background" relative to the browser response
   // catch() allows the app to continue even if caching fails (e.g. QuotaExceeded)
-  cache.put(requestToFetch, responseToCache).catch(err => console.warn('Cache put failed', err));
+  event.waitUntil(
+    cache.put(requestToFetch, responseToCache)
+      .catch(err => console.warn('Cache put failed', err))
+  );
 
   return new Response(streamForBrowser, fetchResponse);
 }
