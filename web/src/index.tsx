@@ -67,10 +67,6 @@ function App() {
       getInstallState()
         .then(yes => setLoadState(yes ? 'installed' : 'not-installed'))
         .catch(reportError)
-
-      //prefetch all voice styles into cache for offline access
-      Promise.all(config.voiceList.map(x => fetch(x.stylePath)))
-        .catch(console.error)
     })
   }, [])
 
