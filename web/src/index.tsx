@@ -210,8 +210,12 @@ function App() {
                 </div>
               </td>
               <td valign="top" style={{width: '50%'}}>
-                <label htmlFor="numSteps">Quality (Steps)</label>
-                <input type="number" className="form-control" id="numSteps" required min="1" max="16"
+                <label htmlFor="numSteps" className="form-label">
+                  <span>Quality (inference steps):</span>
+                  <span className="ms-2 text-secondary">{numSteps}</span>
+                </label>
+                <input type="range" className="form-range d-block" id="numSteps" required min="1" max="16"
+                  style={{maxWidth: 300}}
                   value={numSteps}
                   disabled={!isInstalled || loadState == 'loading' || loadState == 'in-use'}
                   onChange={event => setNumSteps(Number(event.target.value))} />
