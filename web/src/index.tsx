@@ -189,7 +189,7 @@ function App() {
                     <span className="ms-1">{loadStateText.text}</span>
                   </>}
                 </div>
-                {installProgress.map(({ file, loaded, total }) => <div className="mt-1">
+                {installProgress.map(({ file, loaded, total }) => <div key={file} className="mt-1">
                   {file} {total
                     ? '[' + printFileSize(total) + '] ' + Math.round(100 * loaded / total) + '%'
                     : printFileSize(loaded)
@@ -452,6 +452,17 @@ function App() {
     playAudio: PlayAudio,
     callback(method: string, args?: Record<string, unknown>): void
   }) {
+    if (loadState == null) throw new Error('Service not yet available')
+    switch (loadState) {
+      case 'not-installed':
+      case 'installing': throw new Error('Voices not installed')
+      case 'installed': break
+      case 'loading': throw new Error('Synthesizer not ready')
+      case 'loaded': break
+      case 'in-use': break    //will stop current speech
+      default: assertNever(loadState)
+    }
+
     const voiceId = parseAdvertisedVoiceName(voiceName)
     appendActivityLog(`Synthesizing '${text.slice(0,50).replace(/\s+/g,' ')}...' using voice ${voiceId}`)
 
@@ -473,21 +484,10 @@ function App() {
         callback(method, args)
     }
 
-    if (loadState == null) throw new Error('Service not yet available')
-    switch (loadState) {
-      case 'not-installed':
-      case 'installing': throw new Error('Voices not installed')
-      case 'installed': break
-      case 'loading': throw new Error('Synthesizer not ready')
-      case 'loaded': break
-      case 'in-use': throw new Error('Synthesizer busy')
-      default: assertNever(loadState)
-    }
-
     immediate(async () => {
       try {
         //wait synthesizer ready
-        if ((loadState satisfies 'installed'|'loaded') == 'installed') {
+        if ((loadState satisfies 'installed'|'loaded'|'in-use') == 'installed') {
           setLoadState("loading")
           try {
             await synthesizer.current!.readyPromise
@@ -508,7 +508,8 @@ function App() {
           notifyCaller("onEnd")
         }
         finally {
-          setLoadState('loaded')
+          if (speech.current == thisSpeech)
+            setLoadState('loaded')
         }
       }
       catch (err: any) {
@@ -518,7 +519,8 @@ function App() {
         }
       }
       finally {
-        if (speech.current == thisSpeech) speech.current = null
+        if (speech.current == thisSpeech)
+          speech.current = null
       }
     })
   }
@@ -533,7 +535,6 @@ function App() {
 
   function onStop() {
     speech.current?.cancel()
-    speech.current = null
   }
 
   function onForward() {
@@ -559,16 +560,23 @@ function App() {
         draft.downloadUrl = null
         draft.current = {type: "speaking"}
       })
-      onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
-        send({method, args}: {method: string, args?: Record<string, unknown>}) {
-          console.log(method, args)
-          if (method == "onEnd") {
-            testUpdater(draft => {
-              draft.current = null
-            })
+      try {
+        onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
+          send({method, args}: {method: string, args?: Record<string, unknown>}) {
+            console.log(method, args)
+            if (method == "onEnd") {
+              testUpdater(draft => {
+                draft.current = null
+              })
+            }
           }
-        }
-      })
+        })
+      } catch (err) {
+        reportError(err)
+        testUpdater(draft => {
+          draft.current = null
+        })
+      }
     }
   }
 
