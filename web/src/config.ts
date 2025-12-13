@@ -1,6 +1,6 @@
 import { MyVoice } from "./types"
 
-const appVer = '14'
+const appVer = '15'
 const ortVer = '1.23.2'
 const supertonicVer = '0'
 const supertonicRepoPath = `https://huggingface.co/Supertone/supertonic/resolve/main`
@@ -11,12 +11,12 @@ const voiceList: MyVoice[] = [
   { id: 'F2', lang: 'en-US' },
   { id: 'F3', lang: 'en-US' },
   { id: 'F4', lang: 'en-US' },
-  { id: 'F5', lang: 'en-GB' },
+  { id: 'F5', lang: 'en-AU' },
   { id: 'M1', lang: 'en-US' },
   { id: 'M2', lang: 'en-US' },
   { id: 'M3', lang: 'en-US' },
   { id: 'M4', lang: 'en-US' },
-  { id: 'M5', lang: 'en-US' },
+  { id: 'M5', lang: 'en-GB' },
 ].map(voice => ({
   ...voice,
   stylePath: `${supertonicRepoPath}/voice_styles/${voice.id}.json`

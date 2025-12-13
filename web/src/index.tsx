@@ -4,7 +4,7 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
+import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
 import { LoadState, PcmData, PlayAudio } from "./types"
@@ -63,7 +63,7 @@ function App() {
 
   //startup
   React.useEffect(() => {
-    navigator.serviceWorker.ready.then(() => {
+    ensureServiceWorkerIsControlling().then(() => {
       getInstallState()
         .then(yes => setLoadState(yes ? 'installed' : 'not-installed'))
         .catch(reportError)
