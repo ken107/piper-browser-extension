@@ -5,9 +5,9 @@ import { playAudio } from "./audio"
 import config from "./config"
 import { advertiseVoices, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName } from "./services"
 import { makeSpeech } from "./speech"
-import { modelStatus$, synthesize } from "./synthesizer"
-import { AdvertisedVoice, PcmData, PlayAudio } from "./types"
-import { immediate, makeWav } from "./utils"
+import { modelStatus$, synthesize, notifySettingsChanged } from "./synthesizer"
+import { AdvertisedVoice, PcmData, PlayAudio, ModelSettings, ModelQuantization, ModelDevice } from "./types"
+import { immediate, makeWav, getModelSettings, setModelSettings } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -28,6 +28,7 @@ export function App() {
       downloadUrl: null as string|null
     }
   })
+  const [modelSettings, setModelSettingsState] = React.useState<ModelSettings>(getModelSettings())
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
   }
@@ -109,11 +110,34 @@ export function App() {
               <td>
                 <div>Kokoro 82M</div>
                 <div className="text-muted" style={{fontSize: "smaller"}}>This model is licensed under the <a href="https://www.apache.org/licenses/LICENSE-2.0.txt">Apache 2.0 License</a>.</div>
+                <div className="mt-3">
+                  <select
+                    className="form-select form-select-sm w-auto"
+                    value={modelSettings.quantization}
+                    onChange={handleQuantizationChange}
+                  >
+                    <option value="fp32">FP32 (Full precision, {getModelSize('fp32')})</option>
+                    <option value="fp16">FP16 (Half precision, {getModelSize('fp16')})</option>
+                    <option value="q8">Q8 (8-bit quantized, {getModelSize('q8')})</option>
+                    <option value="q4f16">Q4F16 (4-bit + FP16, {getModelSize('q4f16')})</option>
+                    <option value="q4">Q4 (4-bit quantized, {getModelSize('q4')})</option>
+                  </select>
+                </div>
+                <div className="mt-2">
+                  <select
+                    className="form-select form-select-sm w-auto"
+                    value={modelSettings.device}
+                    onChange={handleDeviceChange}
+                  >
+                    <option value="webgpu">WebGPU (GPU acceleration)</option>
+                    <option value="wasm">WASM (CPU, multi-threaded)</option>
+                  </select>
+                </div>
               </td>
               {!state.isInstalled &&
                 <>
-                  <td className="text-end">92.4MB</td>
-                  <td className="text-end ps-2" style={{width: 0}}>
+                  <td className="align-top text-end">{getModelSize(modelSettings.quantization)}</td>
+                  <td className="align-top text-end ps-2" style={{width: 0}}>
                     <button type="button" className="btn btn-success btn-sm"
                       onClick={onInstall}>Install</button>
                   </td>
@@ -121,7 +145,7 @@ export function App() {
               }
               {state.isInstalled &&
                 <>
-                  <td>
+                  <td className="align-top">
                     {immediate(() => {
                       switch (state.modelStatus.status) {
                         case "unloaded":
@@ -133,7 +157,7 @@ export function App() {
                       }
                     })}
                   </td>
-                  <td className="text-end ps-2">
+                  <td className="align-top text-end ps-2">
                     <button type="button" className="btn btn-danger btn-sm"
                       onClick={onDelete}>Delete</button>
                   </td>
@@ -268,6 +292,44 @@ export function App() {
       draft.isInstalled = false
     })
     localStorage.removeItem("isInstalled")
+  }
+
+  function handleQuantizationChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const newSettings = { ...modelSettings, quantization: e.target.value as ModelQuantization }
+    setModelSettingsState(newSettings)
+    setModelSettings(newSettings)
+    handleSettingsChange(newSettings)
+  }
+
+  function handleDeviceChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const newSettings = { ...modelSettings, device: e.target.value as ModelDevice }
+    setModelSettingsState(newSettings)
+    setModelSettings(newSettings)
+    handleSettingsChange(newSettings)
+  }
+
+  function handleSettingsChange(settings: ModelSettings) {
+    // If model is already installed, mark it as needing reinstall
+    if (state.isInstalled) {
+      // Notify worker to clear model
+      notifySettingsChanged()
+      // Update UI to show "Install" button again
+      stateUpdater(draft => {
+        draft.isInstalled = false
+      })
+      localStorage.removeItem("isInstalled")
+    }
+  }
+
+  function getModelSize(quantization: ModelQuantization): string {
+    const sizes = {
+      fp32: '~320MB',
+      fp16: '~160MB',
+      q8: '~80MB',
+      q4f16: '~54MB',
+      q4: '~45MB'
+    }
+    return sizes[quantization]
   }
 
   function onSpeak(

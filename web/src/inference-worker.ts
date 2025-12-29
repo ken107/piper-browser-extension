@@ -1,8 +1,7 @@
 import { env } from "@huggingface/transformers"
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import { KokoroTTS } from "kokoro-js"
-import { PcmData, Voice } from "./types"
-import { lazy } from "./utils"
+import { ModelStatus, PcmData, Voice, ModelSettings } from "./types"
 
 if (env.backends.onnx.wasm) {
   env.backends.onnx.wasm.numThreads = navigator.hardwareConcurrency
@@ -14,7 +13,18 @@ class TransferableResult {
   constructor(public result: unknown, public transfer: Transferable[]) {}
 }
 
-const dispatcher = makeDispatcher("tts-worker", {getVoiceList, synthesize})
+// Store settings received from main thread
+let currentSettings: ModelSettings | null = null
+
+function onSettingsChanged(args: Record<string, unknown>) {
+  if (args.settings) {
+    currentSettings = args.settings as ModelSettings
+  }
+  kokoroInstance = null
+  notifySuper("onModelStatus", {status: "unloaded"})
+}
+
+const dispatcher = makeDispatcher("tts-worker", {getVoiceList, synthesize, onSettingsChanged})
 
 addEventListener("message", event => {
   //console.debug(event.data)
@@ -42,28 +52,37 @@ function notifySuper(method: string, args: Record<string, unknown>) {
 
 
 
-const getKokoro = lazy(() => {
-  let file = ""
-  return KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-ONNX", {
-    dtype: "q8",
-    progress_callback(info) {
-      switch (info.status) {
-        case "initiate":
-          if (info.file.endsWith(".onnx")) file = info.file
-          break
-        case "download":
-          if (info.file == file) notifySuper("onModelStatus", {status: "loading", percent: 0})
-          break
-        case "progress":
-          if (info.file == file) notifySuper("onModelStatus", {status: "loading", percent: info.progress})
-          break
-        case "done":
-          if (info.file == file) notifySuper("onModelStatus", {status: "ready"})
-          break
+let kokoroInstance: Promise<KokoroTTS> | null = null
+
+function getKokoro() {
+  if (!kokoroInstance) {
+    // Use settings passed from main thread, or fall back to defaults
+    const settings = currentSettings || { quantization: 'fp32' as const, device: 'webgpu' as const }
+    let file = ""
+    console.info('Loading model', settings)
+    kokoroInstance = KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-ONNX", {
+      dtype: settings.quantization,
+      device: settings.device,
+      progress_callback(info) {
+        switch (info.status) {
+          case "initiate":
+            if (info.file.endsWith(".onnx")) file = info.file
+            break
+          case "download":
+            if (info.file == file) notifySuper("onModelStatus", {status: "loading", percent: 0} satisfies ModelStatus)
+            break
+          case "progress":
+            if (info.file == file) notifySuper("onModelStatus", {status: "loading", percent: info.progress} satisfies ModelStatus)
+            break
+          case "done":
+            if (info.file == file) notifySuper("onModelStatus", {status: "ready"} satisfies ModelStatus)
+            break
+        }
       }
-    }
-  })
-})
+    })
+  }
+  return kokoroInstance
+}
 
 async function getVoiceList(): Promise<Voice[]> {
   const { voices } = await getKokoro()

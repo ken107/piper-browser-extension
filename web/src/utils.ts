@@ -1,5 +1,5 @@
 import * as rxjs from "rxjs"
-import { PcmData } from "./types"
+import { PcmData, ModelSettings } from "./types"
 
 export function immediate<T>(func: () => T) {
   return func()
@@ -86,4 +86,26 @@ export function makeWav(_chunks: Array<{pcmData: PcmData, appendSilenceSeconds: 
 
   //WAV blob
   return new Blob([header, samples], {type: "audio/wav"})
+}
+
+const SETTINGS_KEY = 'kokoro-model-settings'
+
+export function getModelSettings(): ModelSettings {
+  try {
+    const stored = localStorage.getItem(SETTINGS_KEY)
+    if (stored) {
+      return JSON.parse(stored)
+    }
+  } catch {
+    // Fall through to defaults
+  }
+  return { quantization: 'fp32', device: 'webgpu' }
+}
+
+export function setModelSettings(settings: ModelSettings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  } catch {
+    // Silently fail if localStorage is unavailable
+  }
 }

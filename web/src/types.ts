@@ -37,3 +37,11 @@ interface AudioPlaying {
     resume(): AudioPlaying
   }
 }
+
+export type ModelQuantization = 'q8' | 'q4' | 'q4f16' | 'fp16' | 'fp32'
+export type ModelDevice = 'wasm' | 'webgpu'
+
+export interface ModelSettings {
+  quantization: ModelQuantization
+  device: ModelDevice
+}
