@@ -11,23 +11,23 @@
   },
   "dependencies": {
     "@lsdsoftware/message-dispatcher": "^1.0.6",
-    "kokoro-js": "^1.0.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "rxjs": "^7.8.1",
+    "kokoro-js": "^1.2.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "rxjs": "^7.8.2",
     "use-immer": "^0.11.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
-    "eslint": "^9.17.0",
-    "eslint-plugin-react-hooks": "^5.0.0",
-    "eslint-plugin-react-refresh": "^0.4.16",
-    "globals": "^15.14.0",
-    "typescript": "~5.6.2",
-    "typescript-eslint": "^8.18.2",
-    "vite": "^6.0.5"
+    "@eslint/js": "^9.39.2",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "eslint": "^9.39.2",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "globals": "^16.5.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.1",
+    "vite": "^7.3.0"
   }
 }
