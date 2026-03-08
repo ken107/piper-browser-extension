@@ -1,10 +1,8 @@
 import { MyVoice } from "./types"
 
-const appVer = '15'
+const appVer = '16'
 const ortVer = '1.23.2'
 const supertonicVer = '0'
-const supertonicRepoPath = `https://huggingface.co/Supertone/supertonic/resolve/main`
-const onnxDir = `${supertonicRepoPath}/onnx`
 
 const voiceList: MyVoice[] = [
   { id: 'F1', lang: 'en-US' },
@@ -16,11 +14,8 @@ const voiceList: MyVoice[] = [
   { id: 'M2', lang: 'en-US' },
   { id: 'M3', lang: 'en-US' },
   { id: 'M4', lang: 'en-US' },
-  { id: 'M5', lang: 'en-GB' },
-].map(voice => ({
-  ...voice,
-  stylePath: `${supertonicRepoPath}/voice_styles/${voice.id}.json`
-}))
+  { id: 'M5', lang: 'en-AU' },
+]
 
 export default {
   appVer,
@@ -30,16 +25,16 @@ export default {
   ortWasmPaths: `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ortVer}/dist/`,
 
   supertonicCacheKey: `supertonic-${supertonicVer}`,
-  supertonicRepoPath,
+  supertonicRepoPath: 'https://huggingface.co/Supertone/supertonic/resolve/main',
 
   installables: [
-    'duration_predictor.onnx',
-    'text_encoder.onnx',
-    'vector_estimator.onnx',
-    'vocoder.onnx'
-  ].map(file => `${onnxDir}/${file}`),
-  onnxDir,
+    'onnx/duration_predictor.onnx',
+    'onnx/text_encoder.onnx',
+    'onnx/vector_estimator.onnx',
+    'onnx/vocoder.onnx'
+  ],
   voiceList,
+  extensionUrl: 'chrome-extension://mdoplmghlkjcnegkdhocjbjcncocbdhk',
 
   numPhonemesToPrefetch: 100,
   paragraphSilenceSeconds: .75,

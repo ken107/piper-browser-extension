@@ -2,7 +2,6 @@
 export interface MyVoice {
   readonly id: string
   readonly lang: string
-  readonly stylePath: string
 }
 
 export type LoadState = "not-installed"|"installing"|"installed"|"loading"|"loaded"|"in-use"

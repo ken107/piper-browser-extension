@@ -4,12 +4,16 @@ import { MyVoice } from "./types"
 import { immediate } from "./utils"
 
 
-export async function getInstallState(): Promise<boolean> {
-  const cache = await caches.open(config.supertonicCacheKey)
-  for (const url of config.installables) {
-    if (!await cache.match(url)) return false
+export async function getInstallState(): Promise<{ repoPath: string } | null> {
+  const res = await fetch(`${config.extensionUrl}/${config.installables[0]}`, { method: 'HEAD' }).catch(err => ({ ok: false }))
+  if (res.ok) {
+    return { repoPath: config.extensionUrl }
   }
-  return true
+  const cache = await caches.open(config.supertonicCacheKey)
+  for (const file of config.installables) {
+    if (!await cache.match(`${config.supertonicRepoPath}/${file}`)) return null
+  }
+  return { repoPath: config.supertonicRepoPath }
 }
 
 

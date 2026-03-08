@@ -46,13 +46,16 @@ function getVoiceStyle(voiceId: string) {
     if (!voice) {
       throw new Error('Voice not found')
     }
-    voiceStyles.set(voiceId, promise = loadVoiceStyle([voice.stylePath]))
+    voiceStyles.set(voiceId, promise = loadVoiceStyle([
+      `${repoPath}/voice_styles/${voice.id}.json`
+    ]))
   }
   return promise
 }
 
 
 let engine: { textToSpeech: TextToSpeech, cfgs: any } | undefined
+let repoPath = config.supertonicRepoPath
 const mutex = makeMutex()
 
 async function initialize(args: Record<string, unknown>) {
@@ -60,7 +63,11 @@ async function initialize(args: Record<string, unknown>) {
     throw new Error('Already initialized')
   }
 
-  engine = await loadTextToSpeech(config.onnxDir, {
+  if (typeof args.repoPath == 'string') {
+    repoPath = args.repoPath
+  }
+
+  engine = await loadTextToSpeech(`${repoPath}/onnx`, {
     executionProviders: ['webgpu', 'wasm'],
     graphOptimizationLevel: 'all'
   })

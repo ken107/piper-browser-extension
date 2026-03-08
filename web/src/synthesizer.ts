@@ -17,8 +17,8 @@ const worker = immediate(() => {
 })
 
 
-export function makeSynthesizer() {
-  const readyPromise = worker.request("initialize")
+export function makeSynthesizer(repoPath: string) {
+  const readyPromise = worker.request("initialize", { repoPath })
   return {
     readyPromise,
     async synthesize(text: string, voiceId: string, numSteps: number) {

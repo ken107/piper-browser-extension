@@ -28,6 +28,7 @@ function App() {
 
   const activityLogEl = React.useRef<HTMLTextAreaElement>(null)
   const synthesizer = React.useRef<ReturnType<typeof makeSynthesizer>>(null)
+  const repoPath = React.useRef(config.supertonicRepoPath)
   const speech = React.useRef<ReturnType<typeof makeSpeech>>(null)
 
   const isInstalled = React.useMemo(() => {
@@ -65,7 +66,13 @@ function App() {
   React.useEffect(() => {
     ensureServiceWorkerIsControlling().then(() => {
       getInstallState()
-        .then(yes => setLoadState(yes ? 'installed' : 'not-installed'))
+        .then(state => {
+          if (state) {
+            repoPath.current = state.repoPath
+            console.info('Using repo', repoPath.current)
+          }
+          setLoadState(state ? 'installed' : 'not-installed')
+        })
         .catch(reportError)
     })
   }, [])
@@ -324,8 +331,14 @@ function App() {
     rxjs.fromEvent(navigator.serviceWorker, 'message', (e: MessageEvent) => e).pipe(
       rxjs.takeUntil(
         rxjs.defer(() => {
-          if (!synthesizer.current) synthesizer.current = makeSynthesizer()
+          if (!synthesizer.current) synthesizer.current = makeSynthesizer(repoPath.current)
           return synthesizer.current.readyPromise
+            .then(async () => {
+              //install voices
+              for (const voice of config.voiceList) {
+                await fetch(`${repoPath.current}/voice_styles/${voice.id}.json`)
+              }
+            })
             .catch(err => {
               synthesizer.current = null
               throw err
@@ -469,7 +482,7 @@ function App() {
     //create synthesizer if not yet
     if (!synthesizer.current) {
       appendActivityLog(`Initializing, please wait...`)
-      synthesizer.current = makeSynthesizer()
+      synthesizer.current = makeSynthesizer(repoPath.current)
     }
 
     //create speech
