@@ -7,7 +7,7 @@ import config from "./config"
 import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
-import { LoadState, PcmData, PlayAudio } from "./types"
+import { InstallState, LoadState, PcmData, PlayAudio } from "./types"
 import { assertNever, immediate, makeWav, printFileSize } from "./utils"
 
 navigator.serviceWorker.register('./sw.js');
@@ -16,10 +16,13 @@ ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 
 function App() {
+  const [installState, setInstallState] = React.useState<InstallState|null>(null)
   const [loadState, setLoadState] = React.useState<LoadState|null>(null)
   const [activityLog, setActivityLog] = React.useState("")
   const [showTestForm, setShowTestForm] = React.useState(() => self == top)
   const [showInfoBox, setShowInfoBox] = React.useState(false)
+  const [showInstallDialog, setShowInstallDialog] = React.useState(false)
+  const [showExtensionUninstallDialog, setShowExtensionUninstallDialog] = React.useState(false)
   const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number|null }[]>([])
   const [test, testUpdater] = useImmer({
     current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
@@ -28,7 +31,6 @@ function App() {
 
   const activityLogEl = React.useRef<HTMLTextAreaElement>(null)
   const synthesizer = React.useRef<ReturnType<typeof makeSynthesizer>>(null)
-  const repoPath = React.useRef(config.supertonicRepoPath)
   const speech = React.useRef<ReturnType<typeof makeSpeech>>(null)
 
   const isInstalled = React.useMemo(() => {
@@ -67,10 +69,7 @@ function App() {
     ensureServiceWorkerIsControlling().then(() => {
       getInstallState()
         .then(state => {
-          if (state) {
-            repoPath.current = state.repoPath
-            console.info('Using repo', repoPath.current)
-          }
+          setInstallState(state)
           setLoadState(state ? 'installed' : 'not-installed')
         })
         .catch(reportError)
@@ -300,6 +299,69 @@ function App() {
           </div>
         </div>
       }
+
+      {showInstallDialog &&
+        <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
+          onClick={e => e.target == e.currentTarget && setShowInstallDialog(false)}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Install Voices</h5>
+                <button type="button" className="btn-close" aria-label="Close"
+                  onClick={() => setShowInstallDialog(false)}></button>
+              </div>
+              <div className="modal-body">
+                <p>
+                  For persistent installation, install the browser extension from{" "}
+                  <a target="_blank" rel="noreferrer"
+                    href="https://chromewebstore.google.com/detail/mdoplmghlkjcnegkdhocjbjcncocbdhk">
+                    Chrome Web Store
+                  </a>.
+                  This is the recommended way to keep the voices installed permanently.
+                </p>
+                <p>
+                  Or you can install the voices to browser cache, but the browser may
+                  automatically delete the files if disk space runs low.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary"
+                  onClick={() => setShowInstallDialog(false)}>Cancel</button>
+                <button type="button" className="btn btn-primary"
+                  onClick={onInstallToBrowserCache}>Install to browser cache</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      {showExtensionUninstallDialog &&
+        <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
+          onClick={e => e.target == e.currentTarget && setShowExtensionUninstallDialog(false)}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Uninstall Voices</h5>
+                <button type="button" className="btn-close" aria-label="Close"
+                  onClick={() => setShowExtensionUninstallDialog(false)}></button>
+              </div>
+              <div className="modal-body">
+                <p>
+                  These voices are currently provided by the{" "}
+                  <strong>Supertonic TTS Voices</strong> browser extension.
+                </p>
+                <p>
+                  To remove them, uninstall or disable that extension from your browser's extensions page.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-primary"
+                  onClick={() => setShowExtensionUninstallDialog(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   )
 
@@ -320,7 +382,22 @@ function App() {
     setActivityLog(log => log + text + '\n')
   }
 
-  function onInstall() {
+  async function onInstall() {
+    try {
+      const state = await getInstallState()
+      if (state) {
+        setInstallState(state)
+        setLoadState('installed')
+      } else {
+        setShowInstallDialog(true)
+      }
+    } catch (err) {
+      reportError(err)
+    }
+  }
+
+  function onInstallToBrowserCache() {
+    setShowInstallDialog(false)
     navigator.storage.persist()
       .then(granted => console.info("Persistent storage:", granted))
       .catch(console.error)
@@ -331,12 +408,12 @@ function App() {
     rxjs.fromEvent(navigator.serviceWorker, 'message', (e: MessageEvent) => e).pipe(
       rxjs.takeUntil(
         rxjs.defer(() => {
-          if (!synthesizer.current) synthesizer.current = makeSynthesizer(repoPath.current)
+          if (!synthesizer.current) synthesizer.current = makeSynthesizer(config.supertonicRepoPath)
           return synthesizer.current.readyPromise
             .then(async () => {
               //install voices
               for (const voice of config.voiceList) {
-                await fetch(`${repoPath.current}/voice_styles/${voice.id}.json`)
+                await fetch(`${config.supertonicRepoPath}/voice_styles/${voice.id}.json`)
               }
             })
             .catch(err => {
@@ -358,6 +435,10 @@ function App() {
         }
       },
       complete() {
+        setInstallState({
+          repoType: 'cache',
+          repoPath: config.supertonicRepoPath
+        })
         setLoadState('loaded')
         setInstallProgress([])
         setShowTestForm(true)
@@ -370,6 +451,11 @@ function App() {
   }
 
   async function onUninstall() {
+    if (installState?.repoType == 'extension') {
+      setShowExtensionUninstallDialog(true)
+      return
+    }
+
     if (!confirm("Are you sure you want to uninstall?")) return;
     try {
       if (synthesizer.current) {
@@ -377,6 +463,7 @@ function App() {
         synthesizer.current = null
       }
       await uninstall()
+      setInstallState(null)
       setLoadState("not-installed")
     }
     catch (err) {
@@ -482,7 +569,7 @@ function App() {
     //create synthesizer if not yet
     if (!synthesizer.current) {
       appendActivityLog(`Initializing, please wait...`)
-      synthesizer.current = makeSynthesizer(repoPath.current)
+      synthesizer.current = makeSynthesizer(installState!.repoPath)
     }
 
     //create speech

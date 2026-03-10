@@ -1,6 +1,6 @@
 import { MyVoice } from "./types"
 
-const appVer = '16'
+const appVer = '17'
 const ortVer = '1.23.2'
 const supertonicVer = '0'
 

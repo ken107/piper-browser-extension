@@ -4,6 +4,11 @@ export interface MyVoice {
   readonly lang: string
 }
 
+export interface InstallState {
+  repoType: 'cache'|'extension'
+  repoPath: string
+}
+
 export type LoadState = "not-installed"|"installing"|"installed"|"loading"|"loaded"|"in-use"
 
 export interface PcmData {

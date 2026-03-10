@@ -1,19 +1,25 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import config from "./config"
-import { MyVoice } from "./types"
+import { InstallState, MyVoice } from "./types"
 import { immediate } from "./utils"
 
 
-export async function getInstallState(): Promise<{ repoPath: string } | null> {
+export async function getInstallState(): Promise<InstallState|null> {
   const res = await fetch(`${config.extensionUrl}/${config.installables[0]}`, { method: 'HEAD' }).catch(err => ({ ok: false }))
   if (res.ok) {
-    return { repoPath: config.extensionUrl }
+    return {
+      repoType: 'extension',
+      repoPath: config.extensionUrl
+    }
   }
   const cache = await caches.open(config.supertonicCacheKey)
   for (const file of config.installables) {
     if (!await cache.match(`${config.supertonicRepoPath}/${file}`)) return null
   }
-  return { repoPath: config.supertonicRepoPath }
+  return {
+    repoType: 'cache',
+    repoPath: config.supertonicRepoPath
+  }
 }
 
 
