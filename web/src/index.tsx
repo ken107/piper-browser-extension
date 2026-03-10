@@ -22,6 +22,7 @@ function App() {
   const [showTestForm, setShowTestForm] = React.useState(() => self == top)
   const [showInfoBox, setShowInfoBox] = React.useState(false)
   const [showInstallDialog, setShowInstallDialog] = React.useState(false)
+  const [waitingForExtensionInstall, setWaitingForExtensionInstall] = React.useState(false)
   const [showExtensionUninstallDialog, setShowExtensionUninstallDialog] = React.useState(false)
   const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number|null }[]>([])
   const [test, testUpdater] = useImmer({
@@ -104,6 +105,36 @@ function App() {
       activityLogEl.current.scrollTop = activityLogEl.current.scrollHeight
   }, [
     activityLog
+  ])
+
+  // Poll install state while the dialog is open and the user is installing from the Web Store.
+  React.useEffect(() => {
+    if (!showInstallDialog || !waitingForExtensionInstall) return
+
+    const subscription = rxjs.fromEvent(document, 'visibilitychange').pipe(
+      rxjs.startWith(null),
+      rxjs.switchMap(() => document.visibilityState == 'visible'
+        ? rxjs.timer(0, 3000).pipe(
+            rxjs.exhaustMap(() => rxjs.from(getInstallState()))
+          )
+        : rxjs.EMPTY
+      )
+    ).subscribe({
+      next(state) {
+        if (state?.repoType == 'extension') {
+          setInstallState(state)
+          setLoadState('installed')
+          setWaitingForExtensionInstall(false)
+          setShowInstallDialog(false)
+        }
+      },
+      error: reportError
+    })
+
+    return () => subscription.unsubscribe()
+  }, [
+    showInstallDialog,
+    waitingForExtensionInstall
   ])
 
   //numSteps
@@ -302,23 +333,38 @@ function App() {
 
       {showInstallDialog &&
         <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
-          onClick={e => e.target == e.currentTarget && setShowInstallDialog(false)}>
+          onClick={e => {
+            if (e.target == e.currentTarget) {
+              setWaitingForExtensionInstall(false)
+              setShowInstallDialog(false)
+            }
+          }}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">Install Voices</h5>
                 <button type="button" className="btn-close" aria-label="Close"
-                  onClick={() => setShowInstallDialog(false)}></button>
+                  onClick={() => {
+                    setWaitingForExtensionInstall(false)
+                    setShowInstallDialog(false)
+                  }}></button>
               </div>
               <div className="modal-body">
                 <p>
-                  For persistent installation, install the browser extension from{" "}
+                  For persistent installation, install the Supertonic browser extension from{" "}
                   <a target="_blank" rel="noreferrer"
+                    onClick={() => setWaitingForExtensionInstall(true)}
                     href="https://chromewebstore.google.com/detail/mdoplmghlkjcnegkdhocjbjcncocbdhk">
                     Chrome Web Store
                   </a>.
                   This is the recommended way to keep the voices installed permanently.
                 </p>
+                {waitingForExtensionInstall &&
+                  <div className="d-flex align-items-center gap-2 text-primary mb-3" role="status" aria-live="polite">
+                    <div className="spinner-border spinner-border-sm" aria-hidden="true"></div>
+                    <span>Waiting for extension to be installed.</span>
+                  </div>
+                }
                 <p>
                   Or you can install the voices to browser cache, but the browser may
                   automatically delete the files if disk space runs low.
@@ -326,7 +372,10 @@ function App() {
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary"
-                  onClick={() => setShowInstallDialog(false)}>Cancel</button>
+                  onClick={() => {
+                    setWaitingForExtensionInstall(false)
+                    setShowInstallDialog(false)
+                  }}>Cancel</button>
                 <button type="button" className="btn btn-primary"
                   onClick={onInstallToBrowserCache}>Install to browser cache</button>
               </div>
@@ -397,6 +446,7 @@ function App() {
   }
 
   function onInstallToBrowserCache() {
+    setWaitingForExtensionInstall(false)
     setShowInstallDialog(false)
     navigator.storage.persist()
       .then(granted => console.info("Persistent storage:", granted))
