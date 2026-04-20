@@ -7,10 +7,25 @@ import config from "./config"
 import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
+import { AVAILABLE_LANGS, SupertonicLang } from "./langs"
 import { InstallState, LoadState, PcmData, PlayAudio } from "./types"
 import { assertNever, immediate, makeWav, printFileSize } from "./utils"
 
 navigator.serviceWorker.register('./sw.js');
+
+const LANG_NAMES: Record<SupertonicLang, string> = {
+  en: 'English (en)',
+  ko: 'Korean (ko)',
+  es: 'Spanish (es)',
+  pt: 'Portuguese (pt)',
+  fr: 'French (fr)',
+}
+
+const STYLE_IDS = [...new Set(config.voiceList.map(v => v.styleId))]
+
+function findVoice(styleId: string, lang: SupertonicLang) {
+  return config.voiceList.find(v => v.styleId == styleId && v.lang == lang)
+}
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
@@ -164,12 +179,20 @@ function App() {
         <h2 className="text-muted">Test</h2>
         <form>
           <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
-          <select className="form-control mt-3" name="voice">
-            <option value="">Select a voice</option>
-            {isInstalled && config.voiceList.map(voice =>
-              <option key={voice.id} value={`Supertonic ${voice.id}`}>{voice.id}</option>
-            )}
-          </select>
+          <div className="d-flex mt-3" style={{gap: '0.5rem'}}>
+            <select className="form-control" name="voiceStyle">
+              <option value="">Voice style</option>
+              {isInstalled && STYLE_IDS.map(id =>
+                <option key={id} value={id}>{id}</option>
+              )}
+            </select>
+            <select className="form-control" name="voiceLang">
+              <option value="">Language</option>
+              {isInstalled && AVAILABLE_LANGS.map(l =>
+                <option key={l} value={l}>{LANG_NAMES[l]}</option>
+              )}
+            </select>
+          </div>
           <div className="d-flex align-items-center mt-3">
             {test.current == null &&
               <button type="button" className="btn btn-primary" onClick={onTestSpeak}>Speak</button>
@@ -270,18 +293,22 @@ function App() {
         <table className="table table-bordered">
           <thead className="table-light">
             <tr>
-              <th>Voice</th>
-              <th>Language</th>
+              <th>Style</th>
+              {AVAILABLE_LANGS.map(l => <th key={l} className="text-center">{LANG_NAMES[l]}</th>)}
             </tr>
           </thead>
           <tbody>
-          {config.voiceList.map(voice =>
-            <tr key={voice.id}>
-              <td>
-                <span className="me-1">{voice.id}</span>
-                <span className="link" onClick={() => sampler.play(voice)}>sample</span>
-              </td>
-              <td className="align-top">{voice.lang}</td>
+          {STYLE_IDS.map(styleId =>
+            <tr key={styleId}>
+              <td className="align-middle"><strong>{styleId}</strong></td>
+              {AVAILABLE_LANGS.map(lang => {
+                const voice = findVoice(styleId, lang)
+                return (
+                  <td key={lang} className="align-middle text-center">
+                    {voice && <span className="link" onClick={() => sampler.play(voice)}>▶ sample</span>}
+                  </td>
+                )
+              })}
             </tr>
           )}
           </tbody>
@@ -703,7 +730,9 @@ function App() {
 
   function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {
     const form = (event.target as HTMLButtonElement).form
-    if (form?.text.value && form.voice.value) {
+    const style = form?.voiceStyle.value
+    const lang = form?.voiceLang.value
+    if (form?.text.value && style && lang) {
       if (test.downloadUrl) {
         URL.revokeObjectURL(test.downloadUrl)
       }
@@ -712,7 +741,7 @@ function App() {
         draft.current = {type: "speaking"}
       })
       try {
-        onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
+        onSpeak({utterance: form.text.value, voiceName: `Supertonic ${style}-${lang}`}, {
           send({method, args}: {method: string, args?: Record<string, unknown>}) {
             console.log(method, args)
             if (method == "onEnd") {
@@ -734,7 +763,9 @@ function App() {
   function onTestSynthesize(event: React.MouseEvent<HTMLButtonElement>) {
     const form = (event.target as HTMLButtonElement).form!
     const text = form.text.value
-    const voiceName = form.voice.value
+    const style = form.voiceStyle.value
+    const lang = form.voiceLang.value
+    const voiceName = style && lang ? `Supertonic ${style}-${lang}` : ''
     if (text && voiceName) {
       if (test.downloadUrl) {
         URL.revokeObjectURL(test.downloadUrl)
