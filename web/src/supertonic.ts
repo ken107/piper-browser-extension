@@ -1,4 +1,9 @@
 import * as ort from 'onnxruntime-web';
+import { AVAILABLE_LANGS, SupertonicLang } from './langs';
+
+function isValidLang(lang: string): lang is SupertonicLang {
+    return (AVAILABLE_LANGS as readonly string[]).includes(lang);
+}
 
 /**
  * Unicode Text Processor
@@ -7,8 +12,8 @@ export class UnicodeProcessor {
     constructor(private readonly indexer: number[]) {
     }
 
-    call(textList: string[]) {
-        const processedTexts = textList.map(text => this.preprocessText(text));
+    call(textList: string[], langList: string[]) {
+        const processedTexts = textList.map((text, i) => this.preprocessText(text, langList[i]));
 
         const textIdsLengths = processedTexts.map(text => text.length);
         const maxLen = Math.max(...textIdsLengths);
@@ -26,24 +31,22 @@ export class UnicodeProcessor {
         return { textIds, textMask };
     }
 
-    preprocessText(text: string) {
+    preprocessText(text: string, lang: string) {
         // TODO: Need advanced normalizer for better performance
         text = text.normalize('NFKD');
-
-        // FIXME: this should be fixed for non-English languages
 
         // Remove emojis (wide Unicode range)
         const emojiPattern = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]+/gu;
         text = text.replace(emojiPattern, '');
 
         // Replace various dashes and symbols
-        const replacements = {
+        const replacements: Record<string, string> = {
             '–': '-',
             '‑': '-',
             '—': '-',
-            '¯': ' ',
             '_': ' ',
-            '"': '"',
+            '\u201C': '"',  // left double quote
+            '\u201D': '"',  // right double quote
             '\u2018': "'",  // left single quote
             '\u2019': "'",  // right single quote
             '´': "'",
@@ -60,14 +63,11 @@ export class UnicodeProcessor {
             text = text.replaceAll(k, v);
         }
 
-        // Remove combining diacritics // FIXME: this should be fixed for non-English languages
-        text = text.replace(/[\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u030A\u030B\u030C\u0327\u0328\u0329\u032A\u032B\u032C\u032D\u032E\u032F]/g, '');
-
         // Remove special symbols
         text = text.replace(/[♥☆♡©\\]/g, '');
 
         // Replace known expressions
-        const exprReplacements = {
+        const exprReplacements: Record<string, string> = {
             '@': ' at ',
             'e.g.,': 'for example, ',
             'i.e.,': 'that is, ',
@@ -104,6 +104,14 @@ export class UnicodeProcessor {
             text += '.';
         }
 
+        // Validate language
+        if (!isValidLang(lang)) {
+            throw new Error(`Invalid language: ${lang}. Available: ${AVAILABLE_LANGS.join(', ')}`);
+        }
+
+        // Wrap text with language tags
+        text = `<${lang}>${text}</${lang}>`;
+
         return text;
     }
 
@@ -112,7 +120,7 @@ export class UnicodeProcessor {
         return this.lengthToMask(textIdsLengths, maxLen);
     }
 
-    lengthToMask(lengths: number[], maxLen: number|null = null) {
+    lengthToMask(lengths: number[], maxLen: number | null = null) {
         const actualMaxLen = maxLen || Math.max(...lengths);
         return lengths.map(len => {
             const row = new Array(actualMaxLen).fill(0.0);
@@ -142,21 +150,21 @@ export class TextToSpeech {
     private readonly sampleRate: number
 
     constructor(
-      private readonly cfgs: any,
-      private readonly textProcessor: UnicodeProcessor,
-      private readonly dpOrt: ort.InferenceSession,
-      private readonly textEncOrt: ort.InferenceSession,
-      private readonly vectorEstOrt: ort.InferenceSession,
-      private readonly vocoderOrt: ort.InferenceSession
+        private readonly cfgs: any,
+        private readonly textProcessor: UnicodeProcessor,
+        private readonly dpOrt: ort.InferenceSession,
+        private readonly textEncOrt: ort.InferenceSession,
+        private readonly vectorEstOrt: ort.InferenceSession,
+        private readonly vocoderOrt: ort.InferenceSession
     ) {
         this.sampleRate = cfgs.ae.sample_rate;
     }
 
-    async _infer(textList: string[], style: Style, totalStep: number, speed = 1.05, progressCallback: Function|null = null) {
+    async _infer(textList: string[], langList: string[], style: Style, totalStep: number, speed = 1.05, progressCallback: Function | null = null) {
         const bsz = textList.length;
 
         // Process text
-        const { textIds, textMask } = this.textProcessor.call(textList);
+        const { textIds, textMask } = this.textProcessor.call(textList, langList);
 
         const textIdsFlat = new BigInt64Array(textIds.flat().map(x => BigInt(x)));
         const textIdsShape = [bsz, textIds[0].length];
@@ -256,22 +264,25 @@ export class TextToSpeech {
             latent: finalXtTensor
         });
 
+        // Keep as Float32Array so the worker can transfer wav.buffer (MessagePort transferable).
         const wav = vocoderOutputs.wav_tts.data as Float32Array;
 
         return { wav, duration };
     }
 
-    async call(text: string, style: Style, totalStep: number, speed = 1.05, silenceDuration = 0.3, progressCallback: Function|null = null) {
+    async call(text: string, lang: string, style: Style, totalStep: number, speed = 1.05, silenceDuration = 0.3, progressCallback: Function | null = null) {
         if (style.ttl.dims[0] !== 1) {
             throw new Error('Single speaker text to speech only supports single style');
         }
-        const textList = chunkText(text);
+        const maxLen = lang === 'ko' ? 120 : 300;
+        const textList = chunkText(text, maxLen);
+        const langList = new Array(textList.length).fill(lang);
         let wavCat: number[] = [];
         let durCat = 0;
-        
-        for (const chunk of textList) {
-            const { wav, duration } = await this._infer([chunk], style, totalStep, speed, progressCallback);
-            
+
+        for (let i = 0; i < textList.length; i++) {
+            const { wav, duration } = await this._infer([textList[i]], [langList[i]], style, totalStep, speed, progressCallback);
+
             if (wavCat.length === 0) {
                 wavCat = Array.from(wav);
                 durCat = duration[0];
@@ -282,12 +293,12 @@ export class TextToSpeech {
                 durCat += duration[0] + silenceDuration;
             }
         }
-        
+
         return { wav: wavCat, duration: [durCat] };
     }
 
-    async batch(textList: string[], style: Style, totalStep: number, speed = 1.05, progressCallback: Function|null = null) {
-        return await this._infer(textList, style, totalStep, speed, progressCallback);
+    async batch(textList: string[], langList: string[], style: Style, totalStep: number, speed = 1.05, progressCallback: Function | null = null) {
+        return await this._infer(textList, langList, style, totalStep, speed, progressCallback);
     }
 
     sampleNoisyLatent(duration: number[], sampleRate: number, baseChunkSize: number, chunkCompress: number, latentDim: number) {
@@ -333,7 +344,7 @@ export class TextToSpeech {
         return { xt, latentMask };
     }
 
-    lengthToMask(lengths: number[], maxLen: number|null = null) {
+    lengthToMask(lengths: number[], maxLen: number | null = null) {
         const actualMaxLen = maxLen || Math.max(...lengths);
         return lengths.map(len => {
             const row = new Array(actualMaxLen).fill(0.0);
@@ -436,7 +447,7 @@ export async function loadOnnx(onnxPath: string, options: ort.InferenceSession.S
 /**
  * Load all TTS components
  */
-export async function loadTextToSpeech(onnxDir: string, sessionOptions: ort.InferenceSession.SessionOptions = {}, progressCallback: Function|null = null) {
+export async function loadTextToSpeech(onnxDir: string, sessionOptions: ort.InferenceSession.SessionOptions = {}, progressCallback: Function | null = null) {
     console.log('Using WebAssembly/WebGPU for inference');
 
     const cfgs = await loadCfgs(onnxDir);
@@ -515,7 +526,7 @@ function chunkText(text: string, maxLen = 300) {
 /**
  * Write WAV file to ArrayBuffer
  */
-export function writeWavFile(audioData: Float32Array, sampleRate: number) {
+export function writeWavFile(audioData: Float32Array | number[], sampleRate: number) {
     const numChannels = 1;
     const bitsPerSample = 16;
     const byteRate = sampleRate * numChannels * bitsPerSample / 8;

@@ -461,9 +461,10 @@ function App() {
           if (!synthesizer.current) synthesizer.current = makeSynthesizer(config.supertonicRepoPath)
           return synthesizer.current.readyPromise
             .then(async () => {
-              //install voices
-              for (const voice of config.voiceList) {
-                await fetch(`${config.supertonicRepoPath}/voice_styles/${voice.id}.json`)
+              //install voices (one fetch per unique voice style file; langs share the same style)
+              const styleIds = [...new Set(config.voiceList.map(v => v.styleId))]
+              for (const styleId of styleIds) {
+                await fetch(`${config.supertonicRepoPath}/voice_styles/${styleId}.json`)
               }
             })
             .catch(err => {
