@@ -1,21 +1,15 @@
+import { AVAILABLE_LANGS } from "./langs"
 import { MyVoice } from "./types"
 
-const appVer = '18'
+const appVer = '19'
 const ortVer = '1.23.2'
-const supertonicVer = '0'
+const supertonicVer = '3'
 
-const voiceList: MyVoice[] = [
-  { id: 'F1', lang: 'en-US' },
-  { id: 'F2', lang: 'en-US' },
-  { id: 'F3', lang: 'en-US' },
-  { id: 'F4', lang: 'en-US' },
-  { id: 'F5', lang: 'en-AU' },
-  { id: 'M1', lang: 'en-US' },
-  { id: 'M2', lang: 'en-US' },
-  { id: 'M3', lang: 'en-US' },
-  { id: 'M4', lang: 'en-US' },
-  { id: 'M5', lang: 'en-AU' },
-]
+const styleIds = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'] as const
+
+const voiceList: MyVoice[] = styleIds.flatMap(styleId =>
+  AVAILABLE_LANGS.map<MyVoice>(lang => ({ id: `${styleId}-${lang}`, styleId, lang }))
+)
 
 export default {
   appVer,
@@ -25,7 +19,7 @@ export default {
   ortWasmPaths: `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ortVer}/dist/`,
 
   supertonicCacheKey: `supertonic-${supertonicVer}`,
-  supertonicRepoPath: 'https://huggingface.co/Supertone/supertonic/resolve/main',
+  supertonicRepoPath: `https://huggingface.co/Supertone/supertonic-${supertonicVer}/resolve/main`,
 
   installables: [
     'onnx/duration_predictor.onnx',

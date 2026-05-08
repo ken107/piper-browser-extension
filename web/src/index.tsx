@@ -7,27 +7,68 @@ import config from "./config"
 import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
+import { AVAILABLE_LANGS, SupertonicLang } from "./langs"
 import { InstallState, LoadState, PcmData, PlayAudio } from "./types"
 import { assertNever, immediate, makeWav, printFileSize } from "./utils"
 
 navigator.serviceWorker.register('./sw.js');
 
+const LANG_NAMES: Record<SupertonicLang, string> = {
+  en: 'English (en)',
+  ko: 'Korean (ko)',
+  ja: 'Japanese (ja)',
+  ar: 'Arabic (ar)',
+  bg: 'Bulgarian (bg)',
+  cs: 'Czech (cs)',
+  da: 'Danish (da)',
+  de: 'German (de)',
+  el: 'Greek (el)',
+  es: 'Spanish (es)',
+  et: 'Estonian (et)',
+  fi: 'Finnish (fi)',
+  fr: 'French (fr)',
+  hi: 'Hindi (hi)',
+  hr: 'Croatian (hr)',
+  hu: 'Hungarian (hu)',
+  id: 'Indonesian (id)',
+  it: 'Italian (it)',
+  lt: 'Lithuanian (lt)',
+  lv: 'Latvian (lv)',
+  nl: 'Dutch (nl)',
+  pl: 'Polish (pl)',
+  pt: 'Portuguese (pt)',
+  ro: 'Romanian (ro)',
+  ru: 'Russian (ru)',
+  sk: 'Slovak (sk)',
+  sl: 'Slovenian (sl)',
+  sv: 'Swedish (sv)',
+  tr: 'Turkish (tr)',
+  uk: 'Ukrainian (uk)',
+  vi: 'Vietnamese (vi)',
+}
+
+const STYLE_IDS = [...new Set(config.voiceList.map(v => v.styleId))]
+
+function findVoice(styleId: string, lang: SupertonicLang) {
+  return config.voiceList.find(v => v.styleId == styleId && v.lang == lang)
+}
+
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 
 function App() {
-  const [installState, setInstallState] = React.useState<InstallState|null>(null)
-  const [loadState, setLoadState] = React.useState<LoadState|null>(null)
+  const [installState, setInstallState] = React.useState<InstallState | null>(null)
+  const [loadState, setLoadState] = React.useState<LoadState | null>(null)
   const [activityLog, setActivityLog] = React.useState("")
   const [showTestForm, setShowTestForm] = React.useState(() => self == top)
   const [showInfoBox, setShowInfoBox] = React.useState(false)
   const [showInstallDialog, setShowInstallDialog] = React.useState(false)
   const [waitingForExtensionInstall, setWaitingForExtensionInstall] = React.useState(false)
   const [showExtensionUninstallDialog, setShowExtensionUninstallDialog] = React.useState(false)
-  const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number|null }[]>([])
+  const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number | null }[]>([])
   const [test, testUpdater] = useImmer({
-    current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
-    downloadUrl: null as string|null
+    current: null as null | { type: "speaking" } | { type: "synthesizing", percent: number },
+    downloadUrl: null as string | null
   })
 
   const activityLogEl = React.useRef<HTMLTextAreaElement>(null)
@@ -115,8 +156,8 @@ function App() {
       rxjs.startWith(null),
       rxjs.switchMap(() => document.visibilityState == 'visible'
         ? rxjs.timer(0, 3000).pipe(
-            rxjs.exhaustMap(() => rxjs.from(getInstallState()))
-          )
+          rxjs.exhaustMap(() => rxjs.from(getInstallState()))
+        )
         : rxjs.EMPTY
       )
     ).subscribe({
@@ -164,12 +205,20 @@ function App() {
         <h2 className="text-muted">Test</h2>
         <form>
           <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
-          <select className="form-control mt-3" name="voice">
-            <option value="">Select a voice</option>
-            {isInstalled && config.voiceList.map(voice =>
-              <option key={voice.id} value={`Supertonic ${voice.id}`}>{voice.id}</option>
-            )}
-          </select>
+          <div className="d-flex mt-3" style={{ gap: '0.5rem' }}>
+            <select className="form-control" name="voiceStyle">
+              <option value="">Voice style</option>
+              {isInstalled && STYLE_IDS.map(id =>
+                <option key={id} value={id}>{id}</option>
+              )}
+            </select>
+            <select className="form-control" name="voiceLang">
+              <option value="">Language</option>
+              {isInstalled && AVAILABLE_LANGS.map(l =>
+                <option key={l} value={l}>{LANG_NAMES[l]}</option>
+              )}
+            </select>
+          </div>
           <div className="d-flex align-items-center mt-3">
             {test.current == null &&
               <button type="button" className="btn btn-primary" onClick={onTestSpeak}>Speak</button>
@@ -184,7 +233,7 @@ function App() {
                 <button type="button" className="btn btn-secondary ms-1" onClick={onForward}>Forward</button>
                 <button type="button" className="btn btn-secondary ms-1" onClick={onRewind}>Rewind</button>
                 <button type="button" className="btn btn-secondary ms-1"
-                  onClick={() => onSeek({index: Number(prompt())})}>Seek</button>
+                  onClick={() => onSeek({ index: Number(prompt()) })}>Seek</button>
               </>
             }
             {test.current == null &&
@@ -220,9 +269,9 @@ function App() {
           <tbody>
             <tr>
               <td>
-                <div style={{fontSize: 'larger'}}>
+                <div style={{ fontSize: 'larger' }}>
                   {loadStateText && <>
-                    <span style={{color: loadStateText.statusColor}}>●</span>
+                    <span style={{ color: loadStateText.statusColor }}>●</span>
                     <span className="ms-1">{loadStateText.text}</span>
                   </>}
                 </div>
@@ -237,7 +286,7 @@ function App() {
                     <button type="button" className="btn btn-primary"
                       disabled={loadState == null || loadState == 'installing'}
                       onClick={onInstall}>Install</button>
-                    <span className="ms-2">(264 MB)</span>
+                    <span className="ms-2">(398 MB)</span>
                   </>}
                   {isInstalled &&
                     <button type="button" className="btn btn-outline-danger"
@@ -246,13 +295,13 @@ function App() {
                   }
                 </div>
               </td>
-              <td valign="top" style={{width: '50%'}}>
+              <td valign="top" style={{ width: '50%' }}>
                 <label htmlFor="numSteps" className="form-label">
                   <span>Quality (inference steps):</span>
                   <span className="ms-2 text-secondary">{numSteps}</span>
                 </label>
                 <input type="range" className="form-range d-block" id="numSteps" required min="1" max="16"
-                  style={{maxWidth: 300}}
+                  style={{ maxWidth: 300 }}
                   value={numSteps}
                   disabled={!isInstalled || loadState == 'loading' || loadState == 'in-use'}
                   onChange={event => setNumSteps(Number(event.target.value))} />
@@ -270,20 +319,24 @@ function App() {
         <table className="table table-bordered">
           <thead className="table-light">
             <tr>
-              <th>Voice</th>
               <th>Language</th>
+              {STYLE_IDS.map(styleId => <th key={styleId} className="text-center">{styleId}</th>)}
             </tr>
           </thead>
           <tbody>
-          {config.voiceList.map(voice =>
-            <tr key={voice.id}>
-              <td>
-                <span className="me-1">{voice.id}</span>
-                <span className="link" onClick={() => sampler.play(voice)}>sample</span>
-              </td>
-              <td className="align-top">{voice.lang}</td>
-            </tr>
-          )}
+            {AVAILABLE_LANGS.map(lang =>
+              <tr key={lang}>
+                <td className="align-middle">{LANG_NAMES[lang]}</td>
+                {STYLE_IDS.map(styleId => {
+                  const voice = findVoice(styleId, lang)
+                  return (
+                    <td key={styleId} className="align-middle text-center">
+                      {voice && <span className="link" onClick={() => sampler.play(voice)}>▶ sample</span>}
+                    </td>
+                  )
+                })}
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -302,7 +355,7 @@ function App() {
       </div>
 
       {showInfoBox &&
-        <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
+        <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,.5)" }} tabIndex={-1} aria-hidden="true"
           onClick={e => e.target == e.currentTarget && setShowInfoBox(false)}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
@@ -332,7 +385,7 @@ function App() {
       }
 
       {showInstallDialog &&
-        <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
+        <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,.5)" }} tabIndex={-1} aria-hidden="true"
           onClick={e => {
             if (e.target == e.currentTarget) {
               setWaitingForExtensionInstall(false)
@@ -385,7 +438,7 @@ function App() {
       }
 
       {showExtensionUninstallDialog &&
-        <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.5)"}} tabIndex={-1} aria-hidden="true"
+        <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,.5)" }} tabIndex={-1} aria-hidden="true"
           onClick={e => e.target == e.currentTarget && setShowExtensionUninstallDialog(false)}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
@@ -461,9 +514,10 @@ function App() {
           if (!synthesizer.current) synthesizer.current = makeSynthesizer(config.supertonicRepoPath)
           return synthesizer.current.readyPromise
             .then(async () => {
-              //install voices
-              for (const voice of config.voiceList) {
-                await fetch(`${config.supertonicRepoPath}/voice_styles/${voice.id}.json`)
+              //install voices (one fetch per unique voice style file; langs share the same style)
+              const styleIds = [...new Set(config.voiceList.map(v => v.styleId))]
+              for (const styleId of styleIds) {
+                await fetch(`${config.supertonicRepoPath}/voice_styles/${styleId}.json`)
               }
             })
             .catch(err => {
@@ -475,7 +529,7 @@ function App() {
     ).subscribe({
       next({ data: message }) {
         if (message.type == 'fetch-progress') {
-          const { url, loaded, total } = message as { url: string, loaded: number, total: number|null }
+          const { url, loaded, total } = message as { url: string, loaded: number, total: number | null }
           const file = url.split('/').pop()!
           setInstallProgress(draft => {
             const bucket = draft.find(x => x.file == file)
@@ -522,8 +576,8 @@ function App() {
   }
 
   function onSpeak(
-    {utterance, voiceName, pitch, rate, volume, externalPlayback}: Record<string, unknown>,
-    sender: {send(message: unknown): void}
+    { utterance, voiceName, pitch, rate, volume, externalPlayback }: Record<string, unknown>,
+    sender: { send(message: unknown): void }
   ) {
     if (!(
       typeof utterance == "string" &&
@@ -540,16 +594,16 @@ function App() {
       voiceName,
       playAudio(pcmData, appendSilenceSeconds) {
         if (externalPlayback) {
-          const wav = makeWav([{pcmData, appendSilenceSeconds}])
+          const wav = makeWav([{ pcmData, appendSilenceSeconds }])
           const id = String(Math.random())
-          sender.send({to: "supertonic-host", type: "request", id, method: "audioPlay", args: {src: wav, rate, volume}})
+          sender.send({ to: "supertonic-host", type: "request", id, method: "audioPlay", args: { src: wav, rate, volume } })
           const playing = {
             completePromise: messageDispatcher.waitForResponse<void>(id),
             pause() {
-              sender.send({to:"supertonic-host", type: "notification", method: "audioPause"})
+              sender.send({ to: "supertonic-host", type: "notification", method: "audioPause" })
               return {
                 resume() {
-                  sender.send({to: "supertonic-host", type: "notification", method: "audioResume"})
+                  sender.send({ to: "supertonic-host", type: "notification", method: "audioResume" })
                   return playing
                 }
               }
@@ -561,14 +615,14 @@ function App() {
         }
       },
       callback(method, args) {
-        sender.send({to: "supertonic-host", type: "notification", method, args})
+        sender.send({ to: "supertonic-host", type: "notification", method, args })
       }
     })
   }
 
   function onSynthesize(
-    {text, voiceName, pitch}: Record<string, unknown>,
-    sender: {send(message: unknown): void}
+    { text, voiceName, pitch }: Record<string, unknown>,
+    sender: { send(message: unknown): void }
   ) {
     if (!(
       typeof text == "string" &&
@@ -577,26 +631,26 @@ function App() {
     )) {
       throw new Error("Bad args")
     }
-    const chunks = [] as Array<{pcmData: PcmData, appendSilenceSeconds: number}>
+    const chunks = [] as Array<{ pcmData: PcmData, appendSilenceSeconds: number }>
     speak({
       text,
       voiceName,
       playAudio(pcmData, appendSilenceSeconds) {
-        chunks.push({pcmData, appendSilenceSeconds})
+        chunks.push({ pcmData, appendSilenceSeconds })
         const playing = {
           completePromise: Promise.resolve(),
-          pause: () => ({resume: () => playing})
+          pause: () => ({ resume: () => playing })
         }
         return playing
       },
       callback(method, args) {
-        if (method == "onEnd") args = {...args, audioBlob: makeWav(chunks)}
-        sender.send({to: "supertonic-host", type: "notification", method, args})
+        if (method == "onEnd") args = { ...args, audioBlob: makeWav(chunks) }
+        sender.send({ to: "supertonic-host", type: "notification", method, args })
       }
     })
   }
 
-  function speak({text, voiceName, playAudio, callback}: {
+  function speak({ text, voiceName, playAudio, callback }: {
     text: string,
     voiceName: string,
     playAudio: PlayAudio,
@@ -614,7 +668,7 @@ function App() {
     }
 
     const voiceId = parseAdvertisedVoiceName(voiceName)
-    appendActivityLog(`Synthesizing '${text.slice(0,50).replace(/\s+/g,' ')}...' using voice ${voiceId}`)
+    appendActivityLog(`Synthesizing '${text.slice(0, 50).replace(/\s+/g, ' ')}...' using voice ${voiceId}`)
 
     //create synthesizer if not yet
     if (!synthesizer.current) {
@@ -624,9 +678,9 @@ function App() {
 
     //create speech
     speech.current?.cancel()
-    const thisSpeech = speech.current = makeSpeech(synthesizer.current, {voiceId, text, numSteps, playAudio}, {
+    const thisSpeech = speech.current = makeSpeech(synthesizer.current, { voiceId, text, numSteps, playAudio }, {
       onSentence(startIndex, endIndex) {
-        notifyCaller("onSentence", {startIndex, endIndex})
+        notifyCaller("onSentence", { startIndex, endIndex })
       }
     })
     function notifyCaller(method: string, args?: Record<string, unknown>) {
@@ -637,7 +691,7 @@ function App() {
     immediate(async () => {
       try {
         //wait synthesizer ready
-        if ((loadState satisfies 'installed'|'loaded'|'in-use') == 'installed') {
+        if ((loadState satisfies 'installed' | 'loaded' | 'in-use') == 'installed') {
           setLoadState("loading")
           try {
             await synthesizer.current!.readyPromise
@@ -653,7 +707,7 @@ function App() {
         //play speech
         try {
           setLoadState('in-use')
-          notifyCaller("onStart", {sentenceStartIndicies: thisSpeech.sentenceStartIndicies})
+          notifyCaller("onStart", { sentenceStartIndicies: thisSpeech.sentenceStartIndicies })
           await thisSpeech.play()
           notifyCaller("onEnd")
         }
@@ -665,7 +719,7 @@ function App() {
       catch (err: any) {
         if (err.name != "CancellationException") {
           reportError(err)
-          notifyCaller("onError", {error: err})
+          notifyCaller("onError", { error: err })
         }
       }
       finally {
@@ -695,24 +749,26 @@ function App() {
     speech.current?.rewind()
   }
 
-  function onSeek({index}: Record<string, unknown>) {
+  function onSeek({ index }: Record<string, unknown>) {
     if (typeof index != "number") throw new Error("Bad args")
     speech.current?.seek(index)
   }
 
   function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {
     const form = (event.target as HTMLButtonElement).form
-    if (form?.text.value && form.voice.value) {
+    const style = form?.voiceStyle.value
+    const lang = form?.voiceLang.value
+    if (form?.text.value && style && lang) {
       if (test.downloadUrl) {
         URL.revokeObjectURL(test.downloadUrl)
       }
       testUpdater(draft => {
         draft.downloadUrl = null
-        draft.current = {type: "speaking"}
+        draft.current = { type: "speaking" }
       })
       try {
-        onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
-          send({method, args}: {method: string, args?: Record<string, unknown>}) {
+        onSpeak({ utterance: form.text.value, voiceName: `Supertonic ${style}-${lang}` }, {
+          send({ method, args }: { method: string, args?: Record<string, unknown> }) {
             console.log(method, args)
             if (method == "onEnd") {
               testUpdater(draft => {
@@ -733,17 +789,19 @@ function App() {
   function onTestSynthesize(event: React.MouseEvent<HTMLButtonElement>) {
     const form = (event.target as HTMLButtonElement).form!
     const text = form.text.value
-    const voiceName = form.voice.value
+    const style = form.voiceStyle.value
+    const lang = form.voiceLang.value
+    const voiceName = style && lang ? `Supertonic ${style}-${lang}` : ''
     if (text && voiceName) {
       if (test.downloadUrl) {
         URL.revokeObjectURL(test.downloadUrl)
       }
       testUpdater(draft => {
         draft.downloadUrl = null
-        draft.current = {type: "synthesizing", percent: 0}
+        draft.current = { type: "synthesizing", percent: 0 }
       })
-      onSynthesize({text, voiceName}, {
-        send({method, args}: {method: string, args?: Record<string, unknown>}) {
+      onSynthesize({ text, voiceName }, {
+        send({ method, args }: { method: string, args?: Record<string, unknown> }) {
           console.log(method, args)
           if (method == "onEnd") {
             testUpdater(draft => {

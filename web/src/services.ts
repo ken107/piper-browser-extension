@@ -4,7 +4,7 @@ import { InstallState, MyVoice } from "./types"
 import { immediate } from "./utils"
 
 
-export async function getInstallState(): Promise<InstallState|null> {
+export async function getInstallState(): Promise<InstallState | null> {
   const res = await fetch(`${config.extensionUrl}/${config.installables[0]}`, { method: 'HEAD' }).catch(err => ({ ok: false }))
   if (res.ok) {
     return {
@@ -66,10 +66,10 @@ export const sampler = immediate(() => {
 
 
 export const messageDispatcher = immediate(() => {
-  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("supertonic-service", {})
+  const dispatcher = makeDispatcher<{ send(msg: unknown): void }>("supertonic-service", {})
   addEventListener("message", event => {
-    const send = (msg: unknown) => event.source!.postMessage(msg, {targetOrigin: event.origin})
-    dispatcher.dispatch(event.data, {send}, send)
+    const send = (msg: unknown) => event.source!.postMessage(msg, { targetOrigin: event.origin })
+    dispatcher.dispatch(event.data, { send }, send)
   })
   return dispatcher
 })

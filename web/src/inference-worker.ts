@@ -39,15 +39,11 @@ addEventListener("message", event => {
 
 const voiceStyles = new Map<string, Promise<Style>>()
 
-function getVoiceStyle(voiceId: string) {
-  let promise = voiceStyles.get(voiceId)
+function getVoiceStyle(styleId: string) {
+  let promise = voiceStyles.get(styleId)
   if (!promise) {
-    const voice = config.voiceList.find(voice => voice.id == voiceId)
-    if (!voice) {
-      throw new Error('Voice not found')
-    }
-    voiceStyles.set(voiceId, promise = loadVoiceStyle([
-      `${repoPath}/voice_styles/${voice.id}.json`
+    voiceStyles.set(styleId, promise = loadVoiceStyle([
+      `${repoPath}/voice_styles/${styleId}.json`
     ]))
   }
   return promise
@@ -87,8 +83,12 @@ async function infer(args: Record<string, unknown>) {
     throw new Error('Bad args')
   }
 
-  const style = await getVoiceStyle(voiceId)
-  const { wav, duration } = await mutex.runExclusive(() => engine!.textToSpeech._infer([text], style, numSteps))
+  const voice = config.voiceList.find(v => v.id == voiceId)
+  if (!voice) throw new Error('Voice not found')
+
+  const style = await getVoiceStyle(voice.styleId)
+  const { wav, duration } = await mutex.runExclusive(() =>
+    engine!.textToSpeech._infer([text], [voice.lang], style, numSteps))
   const pcmData: PcmData = {
     samples: wav,
     sampleRate: engine.cfgs.ae.sample_rate,

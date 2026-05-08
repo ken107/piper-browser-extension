@@ -1,7 +1,9 @@
+import { SupertonicLang } from "./langs"
 
 export interface MyVoice {
   readonly id: string
-  readonly lang: string
+  readonly styleId: string
+  readonly lang: SupertonicLang
 }
 
 export interface InstallState {
