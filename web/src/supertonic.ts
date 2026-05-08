@@ -274,7 +274,7 @@ export class TextToSpeech {
         if (style.ttl.dims[0] !== 1) {
             throw new Error('Single speaker text to speech only supports single style');
         }
-        const maxLen = lang === 'ko' ? 120 : 300;
+        const maxLen = (lang === 'ko' || lang === 'ja') ? 120 : 300;
         const textList = chunkText(text, maxLen);
         const langList = new Array(textList.length).fill(lang);
         let wavCat: number[] = [];

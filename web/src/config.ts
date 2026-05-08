@@ -1,9 +1,9 @@
 import { AVAILABLE_LANGS } from "./langs"
 import { MyVoice } from "./types"
 
-const appVer = '18'
+const appVer = '19'
 const ortVer = '1.23.2'
-const supertonicVer = '2'
+const supertonicVer = '3'
 
 const styleIds = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'] as const
 
@@ -19,7 +19,7 @@ export default {
   ortWasmPaths: `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ortVer}/dist/`,
 
   supertonicCacheKey: `supertonic-${supertonicVer}`,
-  supertonicRepoPath: 'https://huggingface.co/Supertone/supertonic-2/resolve/main',
+  supertonicRepoPath: `https://huggingface.co/Supertone/supertonic-${supertonicVer}/resolve/main`,
 
   installables: [
     'onnx/duration_predictor.onnx',
