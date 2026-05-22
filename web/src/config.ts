@@ -1,10 +1,10 @@
 
-const PIPER_VER = "1.0.0"
-
 export default {
-  piperVer: PIPER_VER,
+  //changing this will invalidate all installed voices
+  piperVer: "1.0.0",
+
   serviceUrl: "https://service.lsdsoftware.com",
-  repoUrl: `https://huggingface.co/rhasspy/piper-voices/resolve/v${PIPER_VER}/`,
+  repoUrl: `https://huggingface.co/rhasspy/piper-voices/resolve/main/`,
 
   voiceList: {
     file: "voices.json",
