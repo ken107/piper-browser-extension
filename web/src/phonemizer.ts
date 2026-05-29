@@ -1,5 +1,5 @@
-import { ModelConfig } from "./types"
 import config from "./config"
+import type { ModelConfig, PhonemeType } from "./types"
 import { lazy } from "./utils"
 
 export interface Phrase {
@@ -36,7 +36,7 @@ const getLocalPhonemizer = lazy(async () => {
   }
 })
 
-async function batchPhonemize(texts: string[], lang: string, phonemeType: "text"|"espeak") {
+async function batchPhonemize(texts: string[], lang: string, phonemeType: PhonemeType) {
   try {
     if (phonemeType == "espeak" && !/^(ru|lb|ar)\b/.test(lang)) {
       const {phonemize} = await getLocalPhonemizer()
@@ -62,7 +62,7 @@ async function batchPhonemize(texts: string[], lang: string, phonemeType: "text"
 
 
 export function makePhonemizer(modelConfig: ModelConfig) {
-  const phonemeType = (modelConfig.phoneme_type ?? config.defaults.phonemeType) == "text" ? "text" : "espeak"
+  const phonemeType = modelConfig.phoneme_type ?? config.defaults.phonemeType
   const sentenceSilenceSeconds = config.defaults.sentenceSilenceSeconds
 
   return {
@@ -93,33 +93,65 @@ export function makePhonemizer(modelConfig: ModelConfig) {
 }
 
 
-//from: piper-phonemize/src/phoneme_ids.cpp
+//produced by Codex from Piper's python code
+
+const PINYIN_GROUP_END_PHONEMES = new Set([
+  // tones
+  "1", "2", "3", "4", "5",
+
+  // long pauses
+  "。", ".", "？", "?", "！", "!",
+
+  // short pauses
+  "—", "…", "、", "，", ",", "：", ":", "；", ";",
+
+  // space
+  " ",
+])
+
 function toPhonemeIds(phonemes: readonly string[], modelConfig: ModelConfig): number[] {
   if (!modelConfig.phoneme_id_map) throw new Error("Missing modelConfig.phoneme_id_map")
 
   const {bos, eos, pad, addBos, addEos, interspersePad} = config.phonemeIdConfig
   const missing = new Set<string>()
   const phonemeIds = [] as number[]
+  const idMap = modelConfig.phoneme_id_map
 
-  if (addBos) {
-    phonemeIds.push(...modelConfig.phoneme_id_map[bos])
-    if (interspersePad)
-      phonemeIds.push(...modelConfig.phoneme_id_map[pad])
-  }
-
-  for (const phoneme of phonemes) {
-    if (phoneme in modelConfig.phoneme_id_map) {
-      phonemeIds.push(...modelConfig.phoneme_id_map[phoneme])
-      if (interspersePad)
-        phonemeIds.push(...modelConfig.phoneme_id_map[pad])
-    }
-    else {
+  const pushMapped = (phoneme: string): boolean => {
+    const ids = idMap[phoneme]
+    if (!ids) {
       missing.add(phoneme)
+      return false
     }
+
+    phonemeIds.push(...ids)
+    return true
   }
 
-  if (addEos) {
-    phonemeIds.push(...modelConfig.phoneme_id_map[eos])
+  if (modelConfig.phoneme_type === "pinyin") {
+    if (addBos) pushMapped(bos)
+
+    for (const phoneme of phonemes) {
+      if (pushMapped(phoneme) && PINYIN_GROUP_END_PHONEMES.has(phoneme)) {
+        pushMapped(pad)
+      }
+    }
+
+    if (addEos) pushMapped(eos)
+  }
+  else {
+    if (addBos) {
+      pushMapped(bos)
+      if (interspersePad) pushMapped(pad)
+    }
+
+    for (const phoneme of phonemes) {
+      if (pushMapped(phoneme) && interspersePad) {
+        pushMapped(pad)
+      }
+    }
+
+    if (addEos) pushMapped(eos)
   }
 
   if (missing.size) console.warn("Missing mapping for phonemes", missing)

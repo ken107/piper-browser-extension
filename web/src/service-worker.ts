@@ -9,11 +9,11 @@ export {};
 //any intermediary network caches)
 
 const myCache: Record<string, string[]> = {
-  'app-v17': [
-    '/?v=17',
-    '/index.html?v=17',
-    '/bundle.js?v=17',
-    '/inference-worker.js?v=17',
+  'app-v18': [
+    '/?v=18',
+    '/index.html?v=18',
+    '/bundle.js?v=18',
+    '/inference-worker.js?v=18',
   ],
   'bootstrap-v1': [
     '/bootstrap.min.css?v=1',

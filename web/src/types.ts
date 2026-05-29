@@ -38,6 +38,8 @@ export interface AdvertisedVoice {
 export type InstallState = "not-installed"|"installing"|"installed"
 export type LoadState = "not-loaded"|"loading"|"loaded"
 
+export type PhonemeType = 'text'|'espeak'|'pinyin'
+
 export interface ModelConfig {
   readonly audio?: {
     readonly sample_rate?: number
@@ -51,7 +53,7 @@ export interface ModelConfig {
     readonly noise_w?: number
     readonly phoneme_silence?: Record<string, number>
   }
-  readonly phoneme_type?: string
+  readonly phoneme_type?: PhonemeType
   readonly phoneme_map?: Record<string, readonly string[]>
   readonly phoneme_id_map?: Record<string, readonly number[]>
 }
