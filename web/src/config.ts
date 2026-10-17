@@ -1,20 +1,32 @@
 import { MyVoice } from "./types"
 
-const appVer = '18'
+const appVer = '1'
 const ortVer = '1.23.2'
-const supertonicVer = '0'
+const pocketVer = '0'
 
+//built-in English voices in voices.bin
 const voiceList: MyVoice[] = [
-  { id: 'F1', lang: 'en-US' },
-  { id: 'F2', lang: 'en-US' },
-  { id: 'F3', lang: 'en-US' },
-  { id: 'F4', lang: 'en-US' },
-  { id: 'F5', lang: 'en-AU' },
-  { id: 'M1', lang: 'en-US' },
-  { id: 'M2', lang: 'en-US' },
-  { id: 'M3', lang: 'en-US' },
-  { id: 'M4', lang: 'en-US' },
-  { id: 'M5', lang: 'en-AU' },
+  { id: 'alba', lang: 'en-US' },
+  { id: 'anna', lang: 'en-US' },
+  { id: 'azelma', lang: 'en-US' },
+  { id: 'bill_boerst', lang: 'en-US' },
+  { id: 'caro_davy', lang: 'en-US' },
+  { id: 'charles', lang: 'en-US' },
+  { id: 'cosette', lang: 'en-US' },
+  { id: 'eponine', lang: 'en-US' },
+  { id: 'eve', lang: 'en-US' },
+  { id: 'fantine', lang: 'en-US' },
+  { id: 'george', lang: 'en-US' },
+  { id: 'jane', lang: 'en-US' },
+  { id: 'jean', lang: 'en-US' },
+  { id: 'javert', lang: 'en-US' },
+  { id: 'marius', lang: 'en-US' },
+  { id: 'mary', lang: 'en-US' },
+  { id: 'michael', lang: 'en-US' },
+  { id: 'paul', lang: 'en-US' },
+  { id: 'peter_yearsley', lang: 'en-US' },
+  { id: 'stuart_bell', lang: 'en-US' },
+  { id: 'vera', lang: 'en-US' },
 ]
 
 export default {
@@ -24,16 +36,21 @@ export default {
   ortCacheKey: `ort-${ortVer}`,
   ortWasmPaths: `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ortVer}/dist/`,
 
-  supertonicCacheKey: `supertonic-${supertonicVer}`,
-  supertonicRepoPath: 'https://huggingface.co/Supertone/supertonic/resolve/main',
+  pocketCacheKey: `pocket-${pocketVer}`,
+  //INT8 ONNX export by KevinAHM; consider mirroring to a model repo we control
+  pocketRepoPath: 'https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main/onnx/english_2026-04',
 
   installables: [
-    'onnx/duration_predictor.onnx',
-    'onnx/text_encoder.onnx',
-    'onnx/vector_estimator.onnx',
-    'onnx/vocoder.onnx'
+    'bundle.json',
+    'tokenizer.model',
+    'text_conditioner_int8.onnx',
+    'flow_lm_main_int8.onnx',
+    'flow_lm_flow_int8.onnx',
+    'mimi_decoder_int8.onnx',
+    'voices.bin',
   ],
   voiceList,
+  //TODO: placeholder, set to the PocketTTS extension's ID once it is published
   extensionUrl: 'chrome-extension://mdoplmghlkjcnegkdhocjbjcncocbdhk',
 
   numPhonemesToPrefetch: 100,

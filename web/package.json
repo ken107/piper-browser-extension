@@ -1,11 +1,11 @@
 {
-  "name": "supertonic-browser-extension",
+  "name": "pockettts-browser-extension",
   "version": "1.0.0",
-  "description": "Provides Supertonic text-to-speech voices as a browser extension",
+  "description": "Provides Pocket TTS text-to-speech voices as a browser extension",
   "scripts": {
     "dev": "webpack --mode=development --watch",
     "build": "webpack --mode=production",
-    "deploy-prod": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/supertonic.ttstool.com"
+    "deploy-prod": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public build/release s3://lsdsoftware-websites/pocket.ttstool.com"
   },
   "repository": {
     "type": "git",
@@ -16,7 +16,7 @@
   "bugs": {
     "url": "https://github.com/ken107/piper-browser-extension/issues"
   },
-  "homepage": "https://github.com/ken107/piper-browser-extension/tree/supertonic#readme",
+  "homepage": "https://github.com/ken107/piper-browser-extension/tree/pockettts#readme",
   "devDependencies": {
     "@types/chrome": "^0.1.32",
     "@types/react": "^19.2.7",

@@ -19,8 +19,8 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": [ "/onnx/*", "/voice_styles/*" ],
-      "matches": [ "https://supertonic.ttstool.com/*" ]
+      "resources": [ "/bundle.json", "/tokenizer.model", "/*.onnx", "/voices.bin" ],
+      "matches": [ "https://pocket.ttstool.com/*" ]
     }
   ],
   "cross_origin_opener_policy": {

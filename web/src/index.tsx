@@ -4,7 +4,7 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
+import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer } from "./synthesizer"
 import { InstallState, LoadState, PcmData, PlayAudio } from "./types"
@@ -139,7 +139,7 @@ function App() {
 
   //numSteps
   const [numSteps, setNumSteps] = React.useState(() =>
-    Number(localStorage.getItem('numSteps') || '5')
+    Number(localStorage.getItem('numSteps') || '1')
   )
   React.useEffect(() => {
     localStorage.setItem('numSteps', String(numSteps))
@@ -157,7 +157,7 @@ function App() {
           <span className="mx-2">|</span>
         </>}
         <span className="link"
-          onClick={() => setShowInfoBox(true)}>What is Supertonic?</span>
+          onClick={() => setShowInfoBox(true)}>What is Pocket TTS?</span>
       </div>
 
       {showTestForm && <div>
@@ -167,7 +167,7 @@ function App() {
           <select className="form-control mt-3" name="voice">
             <option value="">Select a voice</option>
             {isInstalled && config.voiceList.map(voice =>
-              <option key={voice.id} value={`Supertonic ${voice.id}`}>{voice.id}</option>
+              <option key={voice.id} value={`PocketTTS ${voice.id}`}>{voice.id}</option>
             )}
           </select>
           <div className="d-flex align-items-center mt-3">
@@ -237,7 +237,7 @@ function App() {
                     <button type="button" className="btn btn-primary"
                       disabled={loadState == null || loadState == 'installing'}
                       onClick={onInstall}>Install</button>
-                    <span className="ms-2">(264 MB)</span>
+                    <span className="ms-2">(178 MB)</span>
                   </>}
                   {isInstalled &&
                     <button type="button" className="btn btn-outline-danger"
@@ -248,10 +248,10 @@ function App() {
               </td>
               <td valign="top" style={{width: '50%'}}>
                 <label htmlFor="numSteps" className="form-label">
-                  <span>Quality (inference steps):</span>
+                  <span>Quality (flow steps):</span>
                   <span className="ms-2 text-secondary">{numSteps}</span>
                 </label>
-                <input type="range" className="form-range d-block" id="numSteps" required min="1" max="16"
+                <input type="range" className="form-range d-block" id="numSteps" required min="1" max="8"
                   style={{maxWidth: 300}}
                   value={numSteps}
                   disabled={!isInstalled || loadState == 'loading' || loadState == 'in-use'}
@@ -279,7 +279,6 @@ function App() {
             <tr key={voice.id}>
               <td>
                 <span className="me-1">{voice.id}</span>
-                <span className="link" onClick={() => sampler.play(voice)}>sample</span>
               </td>
               <td className="align-top">{voice.lang}</td>
             </tr>
@@ -289,7 +288,7 @@ function App() {
       </div>
 
       <div className="text-center text-muted small mb-2">
-        <span><a target="_blank" href="https://github.com/ken107/piper-browser-extension/tree/supertonic">
+        <span><a target="_blank" href="https://github.com/ken107/piper-browser-extension/tree/pockettts">
           <svg version="1.0" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet">
             <g transform="translate(0, 240) scale(0.1, -0.1)" fill="#666666" stroke="none">
               <path d="M970 2301 c-305 -68 -555 -237 -727 -493 -301 -451 -241 -1056 143 -1442 115 -116 290 -228 422 -271 49 -16 55 -16 77 -1 24 16 25 20 25 135 l0 118 -88 -5 c-103 -5 -183 13 -231 54 -17 14 -50 62 -73 106 -38 74 -66 108 -144 177 -26 23 -27 24 -9 37 43 32 130 1 185 -65 96 -117 133 -148 188 -160 49 -10 94 -6 162 14 9 3 21 24 27 48 6 23 22 58 35 77 l24 35 -81 16 c-170 35 -275 96 -344 200 -64 96 -85 179 -86 334 0 146 16 206 79 288 28 36 31 47 23 68 -15 36 -11 188 5 234 13 34 20 40 47 43 45 5 129 -24 214 -72 l73 -42 64 15 c91 21 364 20 446 0 l62 -16 58 35 c77 46 175 82 224 82 39 0 39 -1 55 -52 17 -59 20 -166 5 -217 -8 -30 -6 -39 16 -68 109 -144 121 -383 29 -579 -62 -129 -193 -219 -369 -252 l-84 -16 31 -55 32 -56 3 -223 4 -223 25 -16 c23 -15 28 -15 76 2 80 27 217 101 292 158 446 334 590 933 343 1431 -145 293 -419 518 -733 602 -137 36 -395 44 -525 15z" />
@@ -307,15 +306,17 @@ function App() {
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title">What is Supertonic?</h5>
+                <h5 className="modal-title">What is Pocket TTS?</h5>
                 <button type="button" className="btn-close" aria-label="Close"
                   onClick={() => setShowInfoBox(false)}></button>
               </div>
               <div className="modal-body">
                 <p>
-                  Supertonic is a collection of AI-powered text-to-speech voices developed by Supertone, Inc.
-                  (<a target="_blank" href="https://github.com/supertone-inc/supertonic">GitHub</a>
-                  , <a target="_blank" href="https://huggingface.co/Supertone/supertonic">HuggingFace</a>).
+                  Pocket TTS is a lightweight AI-powered text-to-speech model developed by Kyutai
+                  (<a target="_blank" href="https://github.com/kyutai-labs/pocket-tts">GitHub</a>
+                  , <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">HuggingFace</a>).
+                  The in-browser ONNX version used here was exported
+                  by <a target="_blank" href="https://huggingface.co/KevinAHM/pocket-tts-onnx">KevinAHM</a>.
                   These voices are synthesized in-browser, requiring no cloud subscriptions, and are entirely
                   free to use.
                 </p>
@@ -323,7 +324,7 @@ function App() {
                   You can use them to read aloud web pages and documents with
                   the <a target="_blank" href="https://readaloud.app">Read Aloud</a> extension,
                   or make them generally available to all browser apps through
-                  the <a target="_blank" href="https://ttstool.com/redirect.html?target=supertonic-tts-extension">Supertonic TTS</a> extension.
+                  the <a target="_blank" href="https://ttstool.com/redirect.html?target=pockettts-extension">PocketTTS</a> extension.
                 </p>
               </div>
             </div>
@@ -351,7 +352,7 @@ function App() {
               </div>
               <div className="modal-body">
                 <p>
-                  For persistent installation, install the Supertonic browser extension from{" "}
+                  For persistent installation, install the PocketTTS browser extension from{" "}
                   <a target="_blank" rel="noreferrer"
                     onClick={() => setWaitingForExtensionInstall(true)}
                     href="https://chromewebstore.google.com/detail/mdoplmghlkjcnegkdhocjbjcncocbdhk">
@@ -397,7 +398,7 @@ function App() {
               <div className="modal-body">
                 <p>
                   These voices are currently provided by the{" "}
-                  <strong>Supertonic TTS Voices</strong> browser extension.
+                  <strong>PocketTTS Voices</strong> browser extension.
                 </p>
                 <p>
                   To remove them, uninstall or disable that extension from your browser's extensions page.
@@ -458,13 +459,11 @@ function App() {
     rxjs.fromEvent(navigator.serviceWorker, 'message', (e: MessageEvent) => e).pipe(
       rxjs.takeUntil(
         rxjs.defer(() => {
-          if (!synthesizer.current) synthesizer.current = makeSynthesizer(config.supertonicRepoPath)
+          if (!synthesizer.current) synthesizer.current = makeSynthesizer(config.pocketRepoPath)
           return synthesizer.current.readyPromise
             .then(async () => {
               //install voices
-              for (const voice of config.voiceList) {
-                await fetch(`${config.supertonicRepoPath}/voice_styles/${voice.id}.json`)
-              }
+              await fetch(`${config.pocketRepoPath}/voices.bin`)
             })
             .catch(err => {
               synthesizer.current = null
@@ -487,7 +486,7 @@ function App() {
       complete() {
         setInstallState({
           repoType: 'cache',
-          repoPath: config.supertonicRepoPath
+          repoPath: config.pocketRepoPath
         })
         setLoadState('loaded')
         setInstallProgress([])
@@ -542,14 +541,14 @@ function App() {
         if (externalPlayback) {
           const wav = makeWav([{pcmData, appendSilenceSeconds}])
           const id = String(Math.random())
-          sender.send({to: "supertonic-host", type: "request", id, method: "audioPlay", args: {src: wav, rate, volume}})
+          sender.send({to: "pocket-host", type: "request", id, method: "audioPlay", args: {src: wav, rate, volume}})
           const playing = {
             completePromise: messageDispatcher.waitForResponse<void>(id),
             pause() {
-              sender.send({to:"supertonic-host", type: "notification", method: "audioPause"})
+              sender.send({to:"pocket-host", type: "notification", method: "audioPause"})
               return {
                 resume() {
-                  sender.send({to: "supertonic-host", type: "notification", method: "audioResume"})
+                  sender.send({to: "pocket-host", type: "notification", method: "audioResume"})
                   return playing
                 }
               }
@@ -561,7 +560,7 @@ function App() {
         }
       },
       callback(method, args) {
-        sender.send({to: "supertonic-host", type: "notification", method, args})
+        sender.send({to: "pocket-host", type: "notification", method, args})
       }
     })
   }
@@ -591,7 +590,7 @@ function App() {
       },
       callback(method, args) {
         if (method == "onEnd") args = {...args, audioBlob: makeWav(chunks)}
-        sender.send({to: "supertonic-host", type: "notification", method, args})
+        sender.send({to: "pocket-host", type: "notification", method, args})
       }
     })
   }

@@ -1,7 +1,7 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
 import * as ort from "onnxruntime-web"
 import config from "./config"
-import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from "./supertonic"
+import { loadPocketTts, PocketTts } from "./pocket"
 import { PcmData } from "./types"
 import { makeMutex } from "./utils"
 
@@ -18,7 +18,7 @@ class TransferableResult {
   constructor(public result: unknown, public transfer: Transferable[]) {}
 }
 
-const dispatcher = makeDispatcher("supertonic-worker", {initialize, infer, dispose})
+const dispatcher = makeDispatcher("pocket-worker", {initialize, infer, dispose})
 
 addEventListener("message", event => {
   //console.debug(event.data)
@@ -37,25 +37,7 @@ addEventListener("message", event => {
 })
 
 
-const voiceStyles = new Map<string, Promise<Style>>()
-
-function getVoiceStyle(voiceId: string) {
-  let promise = voiceStyles.get(voiceId)
-  if (!promise) {
-    const voice = config.voiceList.find(voice => voice.id == voiceId)
-    if (!voice) {
-      throw new Error('Voice not found')
-    }
-    voiceStyles.set(voiceId, promise = loadVoiceStyle([
-      `${repoPath}/voice_styles/${voice.id}.json`
-    ]))
-  }
-  return promise
-}
-
-
-let engine: { textToSpeech: TextToSpeech, cfgs: any } | undefined
-let repoPath = config.supertonicRepoPath
+let engine: PocketTts | undefined
 const mutex = makeMutex()
 
 async function initialize(args: Record<string, unknown>) {
@@ -63,16 +45,14 @@ async function initialize(args: Record<string, unknown>) {
     throw new Error('Already initialized')
   }
 
-  if (typeof args.repoPath == 'string') {
-    repoPath = args.repoPath
-  }
+  const repoPath = typeof args.repoPath == 'string' ? args.repoPath : config.pocketRepoPath
 
-  engine = await loadTextToSpeech(`${repoPath}/onnx`, {
-    executionProviders: ['webgpu', 'wasm'],
+  engine = await loadPocketTts(repoPath, {
+    executionProviders: ['wasm'],
     graphOptimizationLevel: 'all'
   })
 
-  return 'webgpu, wasm'
+  return 'wasm'
 }
 
 async function infer(args: Record<string, unknown>) {
@@ -87,11 +67,10 @@ async function infer(args: Record<string, unknown>) {
     throw new Error('Bad args')
   }
 
-  const style = await getVoiceStyle(voiceId)
-  const { wav, duration } = await mutex.runExclusive(() => engine!.textToSpeech._infer([text], style, numSteps))
+  const samples = await mutex.runExclusive(() => engine!.synthesize(text, voiceId, numSteps))
   const pcmData: PcmData = {
-    samples: wav,
-    sampleRate: engine.cfgs.ae.sample_rate,
+    samples,
+    sampleRate: engine.sampleRate,
     numChannels: 1
   }
   return new TransferableResult(pcmData, [pcmData.samples.buffer])
@@ -102,7 +81,7 @@ async function dispose(args: Record<string, unknown>) {
     throw new Error('Not initialized')
   }
 
-  const results = await engine.textToSpeech.dispose()
+  const results = await engine.dispose()
   if (results.some(x => x.status == 'rejected')) {
     console.error('Fail to dispose', results)
   }

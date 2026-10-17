@@ -12,30 +12,30 @@ export async function getInstallState(): Promise<InstallState|null> {
       repoPath: config.extensionUrl
     }
   }
-  const cache = await caches.open(config.supertonicCacheKey)
+  const cache = await caches.open(config.pocketCacheKey)
   for (const file of config.installables) {
-    if (!await cache.match(`${config.supertonicRepoPath}/${file}`)) return null
+    if (!await cache.match(`${config.pocketRepoPath}/${file}`)) return null
   }
   return {
     repoType: 'cache',
-    repoPath: config.supertonicRepoPath
+    repoPath: config.pocketRepoPath
   }
 }
 
 
 export async function uninstall(): Promise<void> {
-  await caches.delete(config.supertonicCacheKey)
+  await caches.delete(config.pocketCacheKey)
 }
 
 
 export function advertiseVoices(voiceList: readonly MyVoice[]) {
   (parent ?? opener)?.postMessage(<Message>{
     type: "notification",
-    to: "supertonic-host",
+    to: "pocket-host",
     method: "advertiseVoices",
     args: {
       voices: voiceList.map(voice => ({
-        voiceName: `Supertonic ${voice.id}`,
+        voiceName: `PocketTTS ${voice.id}`,
         lang: voice.lang,
         eventTypes: ["start", "sentence", "end", "error"]
       }))
@@ -50,23 +50,8 @@ export function parseAdvertisedVoiceName(name: string): string {
 }
 
 
-export const sampler = immediate(() => {
-  const audio = new Audio()
-  audio.crossOrigin = "anonymous"
-  audio.autoplay = true
-  return {
-    play(voice: MyVoice) {
-      audio.src = `samples/${voice.id}.mp3`
-    },
-    stop() {
-      audio.pause()
-    }
-  }
-})
-
-
 export const messageDispatcher = immediate(() => {
-  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("supertonic-service", {})
+  const dispatcher = makeDispatcher<{send(msg: unknown): void}>("pocket-service", {})
   addEventListener("message", event => {
     const send = (msg: unknown) => event.source!.postMessage(msg, {targetOrigin: event.origin})
     dispatcher.dispatch(event.data, {send}, send)

@@ -13,7 +13,7 @@ import config from "./config";
 //3 caches, cache on fetch only, versioning:
 //app cache: append ver to URL
 //ort cache: ver already part of URL
-//supertonic: no ver in URL
+//pocket: no ver in URL
 
 self.addEventListener('activate', (event: ExtendableEvent) =>
   event.waitUntil(
@@ -33,13 +33,13 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     event.respondWith(handleFetch(event, config.appCacheKey));
   } else if (url.startsWith(config.ortWasmPaths)) {
     event.respondWith(handleFetch(event, config.ortCacheKey));
-  } else if (url.startsWith(config.supertonicRepoPath)) {
-    event.respondWith(handleFetch(event, config.supertonicCacheKey));
+  } else if (url.startsWith(config.pocketRepoPath)) {
+    event.respondWith(handleFetch(event, config.pocketCacheKey));
   }
 });
 
 async function removeOldCaches() {
-  const allowed = [config.appCacheKey, config.ortCacheKey, config.supertonicCacheKey];
+  const allowed = [config.appCacheKey, config.ortCacheKey, config.pocketCacheKey];
   const keys = await caches.keys();
   await Promise.all(
     keys.map(key => {

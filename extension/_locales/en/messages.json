@@ -1,11 +1,11 @@
 {
   "extension_name": {
-    "message": "Supertonic Text-to-Speech Voices"
+    "message": "PocketTTS Text-to-Speech Voices"
   },
   "extension_short_name": {
-    "message": "Supertonic TTS"
+    "message": "PocketTTS"
   },
   "extension_description": {
-    "message": "AI text-to-speech voices by Supertonic, synthesized locally in your browser"
+    "message": "AI text-to-speech voices by Kyutai's Pocket TTS, synthesized locally in your browser"
   }
 }

@@ -1,15 +1,15 @@
 
-let supertonicService
+let pocketService
 let speechId
 
 
-//handle messages from supertonic-service
+//handle messages from pocket-service
 
-const domDispatcher = makeDispatcher("supertonic-host", {
+const domDispatcher = makeDispatcher("pocket-host", {
   advertiseVoices({voices}, sender) {
     chrome.ttsEngine.updateVoices(voices)
-    supertonicService = sender
-    notifyServiceWorker("supertonicServiceReady")
+    pocketService = sender
+    notifyServiceWorker("pocketServiceReady")
   },
   onStart(args) {
     notifyServiceWorker("onStart", {...args, speechId})
@@ -30,7 +30,7 @@ window.addEventListener("message", event => {
   const sender = {
     sendRequest(method, args) {
       const id = String(Math.random())
-      send({to: "supertonic-service", type: "request", id, method, args})
+      send({to: "pocket-service", type: "request", id, method, args})
       return domDispatcher.waitForResponse(id)
     }
   }
@@ -40,7 +40,7 @@ window.addEventListener("message", event => {
 
 //handle messages from extension service worker
 
-const extDispatcher = makeDispatcher("supertonic-host", {
+const extDispatcher = makeDispatcher("pocket-host", {
   async areYouThere({requestFocus}) {
     if (requestFocus) {
       const tab = await chrome.tabs.getCurrent()
@@ -52,18 +52,18 @@ const extDispatcher = makeDispatcher("supertonic-host", {
     return true
   },
   speak(args) {
-    if (!supertonicService) throw new Error("No service")
+    if (!pocketService) throw new Error("No service")
     speechId = args.speechId
-    return supertonicService.sendRequest("speak", args)
+    return pocketService.sendRequest("speak", args)
   },
   pause(args) {
-    return supertonicService.sendRequest("pause", args)
+    return pocketService.sendRequest("pause", args)
   },
   resume(args) {
-    return supertonicService.sendRequest("resume", args)
+    return pocketService.sendRequest("resume", args)
   },
   stop(args) {
-    return supertonicService.sendRequest("stop", args)
+    return pocketService.sendRequest("stop", args)
   }
 })
 

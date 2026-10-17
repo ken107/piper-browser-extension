@@ -1,4 +1,6 @@
 node_modules
 build
-extension/onnx
-extension/voice_styles
+extension/bundle.json
+extension/tokenizer.model
+extension/*.onnx
+extension/voices.bin

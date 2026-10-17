@@ -1,5 +1,5 @@
 {
   "scripts": {
-    "package": "zip -Z store -FS -MM -r build/package.zip _locales img onnx voice_styles *.html *.js manifest.json || true"
+    "package": "zip -Z store -FS -MM -r build/package.zip _locales img bundle.json tokenizer.model *.onnx voices.bin *.html *.js manifest.json || true"
   }
 }
