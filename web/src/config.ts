@@ -4,29 +4,16 @@ const appVer = '1'
 const ortVer = '1.23.2'
 const pocketVer = '0'
 
-//built-in English voices in voices.bin
+//built-in English voices in voices.bin (bundle.json predefined_voices)
 const voiceList: MyVoice[] = [
   { id: 'alba', lang: 'en-US' },
-  { id: 'anna', lang: 'en-US' },
   { id: 'azelma', lang: 'en-US' },
-  { id: 'bill_boerst', lang: 'en-US' },
-  { id: 'caro_davy', lang: 'en-US' },
-  { id: 'charles', lang: 'en-US' },
   { id: 'cosette', lang: 'en-US' },
   { id: 'eponine', lang: 'en-US' },
-  { id: 'eve', lang: 'en-US' },
   { id: 'fantine', lang: 'en-US' },
-  { id: 'george', lang: 'en-US' },
-  { id: 'jane', lang: 'en-US' },
-  { id: 'jean', lang: 'en-US' },
   { id: 'javert', lang: 'en-US' },
+  { id: 'jean', lang: 'en-US' },
   { id: 'marius', lang: 'en-US' },
-  { id: 'mary', lang: 'en-US' },
-  { id: 'michael', lang: 'en-US' },
-  { id: 'paul', lang: 'en-US' },
-  { id: 'peter_yearsley', lang: 'en-US' },
-  { id: 'stuart_bell', lang: 'en-US' },
-  { id: 'vera', lang: 'en-US' },
 ]
 
 export default {
