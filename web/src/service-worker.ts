@@ -24,6 +24,11 @@ self.addEventListener('activate', (event: ExtendableEvent) =>
   )
 );
 
+//pages that bypassed the SW (hard reload) ask to be claimed
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  if (event.data?.type == 'claim') event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener('fetch', (event: FetchEvent) => {
   const url = event.request.url;
 

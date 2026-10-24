@@ -92,14 +92,16 @@ export async function ensureServiceWorkerIsControlling(): Promise<ServiceWorkerR
     return registration;
   }
 
-  // 3. If it is active but not yet controlling (the "First Load" race condition),
-  // we must wait for the 'controllerchange' event. This event fires when
-  // clients.claim() finishes executing in the Service Worker.
+  // 3. If it is active but not yet controlling, we must wait for the 'controllerchange' event,
+  // which fires when clients.claim() finishes executing in the Service Worker. That happens on
+  // its own on first load (the SW claims on activate), but a hard reload (Shift+Reload) bypasses
+  // an already-active SW, so we ask it to claim us.
   return new Promise((resolve) => {
     const onControllerChange = () => {
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       resolve(registration);
     };
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+    registration.active?.postMessage({ type: 'claim' });
   });
 }
