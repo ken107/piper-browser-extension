@@ -195,10 +195,7 @@ export class PocketTts {
       if (ids.length > maxTokens) {
         if (current) chunks.push(current)
         current = ''
-        for (let i = 0; i < ids.length; i += maxTokens) {
-          const piece = this.tokenizer.decodeIds(ids.slice(i, i + maxTokens)).trim()
-          if (piece) chunks.push(piece)
-        }
+        chunks.push(...this.splitLongSentence(sentence, maxTokens))
       }
       else if (!current) {
         current = sentence
@@ -213,6 +210,32 @@ export class PocketTts {
     }
     if (current) chunks.push(current)
     return { chunks, framesAfterEos }
+  }
+
+  //split an over-long sentence at clause boundaries, falling back to word boundaries,
+  //so chunks (and the pauses between them) never fall mid-phrase
+  private splitLongSentence(sentence: string, maxTokens: number) {
+    const fits = (text: string) => this.tokenizer.encodeIds(text).length <= maxTokens
+    const pack = (pieces: string[], splitPiece: (piece: string) => string[]) => {
+      const result: string[] = []
+      let current = ''
+      for (const piece of pieces) {
+        const combined = current ? `${current} ${piece}` : piece
+        if (fits(combined)) {
+          current = combined
+        }
+        else {
+          if (current) result.push(current)
+          current = ''
+          if (fits(piece)) current = piece
+          else result.push(...splitPiece(piece))
+        }
+      }
+      if (current) result.push(current)
+      return result
+    }
+    const clauses = (sentence.match(/[^,;:\u2013\u2014]+[,;:\u2013\u2014]*/g) ?? [sentence]).map(c => c.trim()).filter(Boolean)
+    return pack(clauses, clause => pack(clause.split(' '), word => [word]))
   }
 
   dispose() {
