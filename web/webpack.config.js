@@ -34,6 +34,8 @@ module.exports = (env, argv) => ({
   },
   output: {
     path: path.resolve(__dirname, 'build', argv.mode == 'production' ? 'release' : 'debug'),
+    //remove stale files from earlier builds (e.g. piper_phonemize.*), keep the local test server
+    clean: { keep: /^serve\.py$/ },
   },
   plugins: [
     new CopyPlugin({
