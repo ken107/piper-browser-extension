@@ -8,10 +8,6 @@ module.exports = (env, argv) => ({
       import: './src/index.tsx',
       filename: 'bundle.js',
     },
-    inferenceWorker: {
-      import: './src/inference-worker.ts',
-      filename: 'inference-worker.js',
-    },
     serviceWorker: {
       import: './src/service-worker.ts',
       filename: 'sw.js',
@@ -20,6 +16,12 @@ module.exports = (env, argv) => ({
   devtool: argv.mode == 'production' ? undefined : 'source-map',
   module: {
     rules: [
+      {
+        //ORT references its .wasm/.mjs via new URL(..., import.meta.url), but we load them
+        //from jsDelivr (env.wasm.wasmPaths), so don't emit local copies
+        test: /node_modules[\\/]onnxruntime-web[\\/]/,
+        parser: { url: false },
+      },
       {
         test: /\.tsx?$/,
         use: 'ts-loader',
