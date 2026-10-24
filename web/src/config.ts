@@ -37,8 +37,9 @@ export default {
     'voices.bin',
   ],
   voiceList,
-  //TODO: placeholder, set to the PocketTTS extension's ID once it is published
-  extensionUrl: 'chrome-extension://mdoplmghlkjcnegkdhocjbjcncocbdhk',
+  //set to the PocketTTS extension's URL (chrome-extension://<id>) once it is published
+  extensionUrl: null as string|null,
+  extensionStoreUrl: null as string|null,
 
   numPhonemesToPrefetch: 100,
   paragraphSilenceSeconds: .75,

@@ -52,7 +52,11 @@ async function initialize(args: Record<string, unknown>) {
     graphOptimizationLevel: 'all'
   })
 
-  return 'wasm'
+  return {
+    numThreads: ort.env.wasm.numThreads,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    crossOriginIsolated: self.crossOriginIsolated
+  }
 }
 
 async function infer(args: Record<string, unknown>) {
@@ -67,11 +71,17 @@ async function infer(args: Record<string, unknown>) {
     throw new Error('Bad args')
   }
 
-  const samples = await mutex.runExclusive(() => engine!.synthesize(text, voiceId, numSteps))
-  const pcmData: PcmData = {
+  //time only the synthesis itself, not the wait for the mutex
+  const { samples, synthMs } = await mutex.runExclusive(async () => {
+    const start = performance.now()
+    const samples = await engine!.synthesize(text, voiceId, numSteps)
+    return { samples, synthMs: performance.now() - start }
+  })
+  const pcmData: PcmData & { synthMs: number } = {
     samples,
     sampleRate: engine.sampleRate,
-    numChannels: 1
+    numChannels: 1,
+    synthMs
   }
   return new TransferableResult(pcmData, [pcmData.samples.buffer])
 }

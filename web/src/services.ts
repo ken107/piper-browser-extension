@@ -5,11 +5,13 @@ import { immediate } from "./utils"
 
 
 export async function getInstallState(): Promise<InstallState|null> {
-  const res = await fetch(`${config.extensionUrl}/${config.installables[0]}`, { method: 'HEAD' }).catch(err => ({ ok: false }))
-  if (res.ok) {
-    return {
-      repoType: 'extension',
-      repoPath: config.extensionUrl
+  if (config.extensionUrl) {
+    const res = await fetch(`${config.extensionUrl}/${config.installables[0]}`, { method: 'HEAD' }).catch(err => ({ ok: false }))
+    if (res.ok) {
+      return {
+        repoType: 'extension',
+        repoPath: config.extensionUrl
+      }
     }
   }
   const cache = await caches.open(config.pocketCacheKey)
@@ -48,6 +50,21 @@ export function parseAdvertisedVoiceName(name: string): string {
   const [_, voiceId] = name.split(" ")
   return voiceId
 }
+
+
+export const sampler = immediate(() => {
+  const audio = new Audio()
+  audio.crossOrigin = "anonymous"
+  audio.autoplay = true
+  return {
+    play(voice: MyVoice) {
+      audio.src = `samples/${voice.id}.mp3`
+    },
+    stop() {
+      audio.pause()
+    }
+  }
+})
 
 
 export const messageDispatcher = immediate(() => {

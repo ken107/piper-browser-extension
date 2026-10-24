@@ -17,19 +17,33 @@ const worker = immediate(() => {
 })
 
 
-export function makeSynthesizer(repoPath: string) {
-  const readyPromise = worker.request("initialize", { repoPath })
+export interface EngineInfo {
+  numThreads: number
+  hardwareConcurrency: number
+  crossOriginIsolated: boolean
+}
+
+export interface SynthesisStats {
+  textLength: number
+  audioSeconds: number
+  synthSeconds: number
+}
+
+export function makeSynthesizer(repoPath: string, onSynthesized?: (stats: SynthesisStats) => void) {
+  const readyPromise = worker.request<EngineInfo>("initialize", { repoPath })
   return {
     readyPromise,
     async synthesize(text: string, voiceId: string, numSteps: number) {
       await readyPromise
-      const start = Date.now()
-      try {
-        return await worker.request<PcmData>("infer", {text, voiceId, numSteps})
+      const {synthMs, ...pcmData} = await worker.request<PcmData & {synthMs: number}>("infer", {text, voiceId, numSteps})
+      const stats: SynthesisStats = {
+        textLength: text.length,
+        audioSeconds: pcmData.samples.length / pcmData.numChannels / pcmData.sampleRate,
+        synthSeconds: synthMs / 1000
       }
-      finally {
-        console.debug("Synthesized", text.length, "in", Date.now()-start, text)
-      }
+      console.debug("Synthesized", stats, text)
+      onSynthesized?.(stats)
+      return pcmData as PcmData
     },
     async dispose() {
       await readyPromise

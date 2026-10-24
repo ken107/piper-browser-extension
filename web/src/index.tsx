@@ -4,9 +4,9 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, uninstall } from "./services"
+import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
-import { makeSynthesizer } from "./synthesizer"
+import { makeSynthesizer, SynthesisStats } from "./synthesizer"
 import { InstallState, LoadState, PcmData, PlayAudio } from "./types"
 import { assertNever, immediate, makeWav, printFileSize } from "./utils"
 
@@ -25,6 +25,7 @@ function App() {
   const [waitingForExtensionInstall, setWaitingForExtensionInstall] = React.useState(false)
   const [showExtensionUninstallDialog, setShowExtensionUninstallDialog] = React.useState(false)
   const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number|null }[]>([])
+  const [perf, setPerf] = React.useState({ count: 0, audioSeconds: 0, synthSeconds: 0 })
   const [test, testUpdater] = useImmer({
     current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
     downloadUrl: null as string|null
@@ -200,6 +201,15 @@ function App() {
               <audio src={test.downloadUrl} controls className="ms-1" />
             }
           </div>
+          {perf.count > 0 &&
+            <div className="form-text">
+              Speed: {(perf.audioSeconds / perf.synthSeconds).toFixed(2)}x real time
+              (synthesized {perf.audioSeconds.toFixed(1)}s of audio in {perf.synthSeconds.toFixed(1)}s,
+              {" "}{perf.count} sentence{perf.count == 1 ? '' : 's'}).
+              Below 1x, playback will have gaps.
+              <span className="link ms-2" onClick={() => setPerf({ count: 0, audioSeconds: 0, synthSeconds: 0 })}>reset</span>
+            </div>
+          }
         </form>
       </div>}
 
@@ -279,6 +289,7 @@ function App() {
             <tr key={voice.id}>
               <td>
                 <span className="me-1">{voice.id}</span>
+                <span className="link" onClick={() => sampler.play(voice)}>sample</span>
               </td>
               <td className="align-top">{voice.lang}</td>
             </tr>
@@ -322,9 +333,9 @@ function App() {
                 </p>
                 <p>
                   You can use them to read aloud web pages and documents with
-                  the <a target="_blank" href="https://readaloud.app">Read Aloud</a> extension,
-                  or make them generally available to all browser apps through
-                  the <a target="_blank" href="https://ttstool.com/redirect.html?target=pockettts-extension">PocketTTS</a> extension.
+                  the <a target="_blank" href="https://readaloud.app">Read Aloud</a> extension.
+                  Synthesis runs on your CPU, so speed depends on your device;
+                  use the test form above to check it.
                 </p>
               </div>
             </div>
@@ -355,7 +366,7 @@ function App() {
                   For persistent installation, install the PocketTTS browser extension from{" "}
                   <a target="_blank" rel="noreferrer"
                     onClick={() => setWaitingForExtensionInstall(true)}
-                    href="https://chromewebstore.google.com/detail/mdoplmghlkjcnegkdhocjbjcncocbdhk">
+                    href={config.extensionStoreUrl ?? undefined}>
                     Chrome Web Store
                   </a>.
                   This is the recommended way to keep the voices installed permanently.
@@ -438,8 +449,11 @@ function App() {
       if (state) {
         setInstallState(state)
         setLoadState('installed')
-      } else {
+      } else if (config.extensionStoreUrl) {
         setShowInstallDialog(true)
+      } else {
+        //no extension published yet, install straight to browser cache
+        onInstallToBrowserCache()
       }
     } catch (err) {
       reportError(err)
@@ -459,7 +473,7 @@ function App() {
     rxjs.fromEvent(navigator.serviceWorker, 'message', (e: MessageEvent) => e).pipe(
       rxjs.takeUntil(
         rxjs.defer(() => {
-          if (!synthesizer.current) synthesizer.current = makeSynthesizer(config.pocketRepoPath)
+          if (!synthesizer.current) synthesizer.current = createSynthesizer(config.pocketRepoPath)
           return synthesizer.current.readyPromise
             .then(async () => {
               //install voices
@@ -497,6 +511,23 @@ function App() {
         reportError(err)
       }
     })
+  }
+
+  function createSynthesizer(repoPath: string) {
+    const start = performance.now()
+    const synth = makeSynthesizer(repoPath, onSynthesized)
+    synth.readyPromise
+      .then(info => appendActivityLog(
+        `Engine ready in ${((performance.now() - start) / 1000).toFixed(1)}s, using ${info.numThreads} of ${info.hardwareConcurrency} threads` +
+        (info.crossOriginIsolated ? '' : ' (not cross-origin isolated, multi-threading unavailable)')
+      ))
+      .catch(() => {})
+    return synth
+  }
+
+  function onSynthesized({ textLength, audioSeconds, synthSeconds }: SynthesisStats) {
+    appendActivityLog(`Synthesized ${textLength} chars: ${audioSeconds.toFixed(1)}s of audio in ${synthSeconds.toFixed(1)}s (${(audioSeconds / synthSeconds).toFixed(2)}x real time)`)
+    setPerf(p => ({ count: p.count + 1, audioSeconds: p.audioSeconds + audioSeconds, synthSeconds: p.synthSeconds + synthSeconds }))
   }
 
   async function onUninstall() {
@@ -618,7 +649,7 @@ function App() {
     //create synthesizer if not yet
     if (!synthesizer.current) {
       appendActivityLog(`Initializing, please wait...`)
-      synthesizer.current = makeSynthesizer(installState!.repoPath)
+      synthesizer.current = createSynthesizer(installState!.repoPath)
     }
 
     //create speech
