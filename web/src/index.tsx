@@ -332,8 +332,6 @@ function App() {
                   free to use.
                 </p>
                 <p>
-                  You can use them to read aloud web pages and documents with
-                  the <a target="_blank" href="https://readaloud.app">Read Aloud</a> extension.
                   Synthesis runs on your CPU, so speed depends on your device;
                   use the test form above to check it.
                 </p>
