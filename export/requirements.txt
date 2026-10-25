@@ -1,0 +1,11 @@
+# pocket-tts is pinned to a commit: export.py patches its attention module
+pocket-tts @ git+https://github.com/kyutai-labs/pocket-tts@44cb63eaa4144f32ff80863968515165a5554353
+torch==2.14.1
+numpy==2.5.4
+onnx==1.23.2
+onnxruntime==1.31.0
+onnxscript==0.7.2
+# verify.py
+sentencepiece==0.2.2
+soundfile==0.14.0
+scipy==1.18.1

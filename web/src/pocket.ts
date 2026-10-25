@@ -19,12 +19,20 @@ interface StateEntry {
   fill?: string
 }
 
+//bundles from export/ in this repo add the fields after max_token_per_chunk, which KevinAHM's don't have;
+//the defaults reproduce his reference web worker
 interface BundleMetadata {
   sample_rate: number
   samples_per_frame: number
   latent_dim: number
   conditioning_dim: number
   max_token_per_chunk?: number
+  flow_type?: 'lsd'|'drifting'
+  default_temperature?: number
+  default_eos_threshold?: number
+  min_frames_before_eos?: number
+  frames_after_eos_offset?: number
+  replace_characters?: Record<string, string>
   tokenizer_file: string
   insert_bos_before_voice?: boolean
   bos_before_voice_file?: string
@@ -42,6 +50,8 @@ const EOS_THRESHOLD = -4.0
 const MAX_FRAMES = 500
 const DECODE_FRAMES = 12
 const CHUNK_GAP_SECONDS = 0.25
+//a fresh decoder state starts with a small step, heard as a click, so fade in each chunk (as pocket-tts does)
+const FADE_IN_SECONDS = 0.005
 const MAX_CLIP_SECONDS = 30
 //voice states hold the full KV cache (~50 MB each), so keep only the most recently used
 const MAX_CACHED_VOICE_STATES = 2
@@ -102,7 +112,10 @@ export class PocketTts {
     this.voiceEncoder.catch(() => this.voiceEncoder = undefined)
     const { mimiEncoder, bosBeforeVoice } = await this.voiceEncoder
 
-    const audio = clip.subarray(0, MAX_CLIP_SECONDS * this.sampleRate)
+    //the encoder takes whole frames, pad with silence as pocket-tts does
+    const frameSize = Number(this.metadata.samples_per_frame)
+    const audio = new Float32Array(Math.ceil(Math.min(clip.length, MAX_CLIP_SECONDS * this.sampleRate) / frameSize) * frameSize)
+    audio.set(clip.subarray(0, audio.length))
     const result = await mimiEncoder.run({ audio: new ort.Tensor('float32', audio, [1, 1, audio.length]) })
     const encoded = result[mimiEncoder.outputNames[0]]
     const dim = encoded.dims[encoded.dims.length - 1]
@@ -149,8 +162,12 @@ export class PocketTts {
     const latentDim = Number(this.metadata.latent_dim)
     const emptySeq = new ort.Tensor('float32', new Float32Array(0), [1, 0, latentDim])
     const emptyTextEmb = new ort.Tensor('float32', new Float32Array(0), [1, 0, Number(this.metadata.conditioning_dim)])
+    const md = this.metadata
+    const isDrifting = md.flow_type == 'drifting'
     const stTensors = makeFlowTimesteps(lsdSteps)
-    const std = Math.sqrt(TEMPERATURE)
+    const std = Math.sqrt(md.default_temperature ?? TEMPERATURE)
+    const eosThreshold = md.default_eos_threshold ?? EOS_THRESHOLD
+    const minFramesBeforeEos = md.min_frames_before_eos ?? 0
     const audioParts: Float32Array[] = []
 
     for (const chunkText of chunks) {
@@ -177,20 +194,27 @@ export class PocketTts {
 
       for (let step = 0; step < MAX_FRAMES; step++) {
         const arResult = await this.flowLmMain.run({ sequence: currentLatent, text_embeddings: emptyTextEmb, ...flowState })
-        if ((arResult.eos_logit.data as Float32Array)[0] > EOS_THRESHOLD && eosStep == null) eosStep = step
+        if ((arResult.eos_logit.data as Float32Array)[0] > eosThreshold && eosStep == null && step >= minFramesBeforeEos) eosStep = step
         const shouldStop = eosStep != null && step >= eosStep + framesAfterEos
 
-        //integrate the flow from noise to latent
-        const latent = new Float32Array(latentDim)
+        let latent = new Float32Array(latentDim)
         for (let i = 0; i < latentDim; i++) latent[i] = gaussian() * std
-        for (const {s, t} of stTensors) {
-          const flowResult = await this.flowLmFlow.run({
-            c: arResult.conditioning,
-            s, t,
-            x: new ort.Tensor('float32', latent, [1, latentDim])
-          })
-          const flowDir = flowResult.flow_dir.data as Float32Array
-          for (let i = 0; i < latentDim; i++) latent[i] += flowDir[i] / lsdSteps
+        if (isDrifting) {
+          //one-step head, maps the noise straight to the latent
+          const flowResult = await this.flowLmFlow.run({ c: arResult.conditioning, x: new ort.Tensor('float32', latent, [1, latentDim]) })
+          latent = new Float32Array(flowResult.latent.data as Float32Array)
+        }
+        else {
+          //integrate the flow from noise to latent
+          for (const {s, t} of stTensors) {
+            const flowResult = await this.flowLmFlow.run({
+              c: arResult.conditioning,
+              s, t,
+              x: new ort.Tensor('float32', latent, [1, latentDim])
+            })
+            const flowDir = flowResult.flow_dir.data as Float32Array
+            for (let i = 0; i < latentDim; i++) latent[i] += flowDir[i] / lsdSteps
+          }
         }
         latents.push(latent)
         currentLatent = new ort.Tensor('float32', latent, [1, 1, latentDim])
@@ -206,7 +230,9 @@ export class PocketTts {
             ...mimiState
           })
           updateState(mimiState, decodeResult, this.metadata.mimi_state_manifest)
-          audioParts.push(new Float32Array(decodeResult[this.mimiDecoder.outputNames[0]].data as Float32Array))
+          const audio = new Float32Array(decodeResult[this.mimiDecoder.outputNames[0]].data as Float32Array)
+          if (decoded == 0) fadeIn(audio, Math.floor(FADE_IN_SECONDS * this.sampleRate))
+          audioParts.push(audio)
           decoded += pending
         }
         if (shouldStop) break
@@ -220,13 +246,19 @@ export class PocketTts {
   private splitText(text: string) {
     const md = this.metadata
     const maxTokens = Number(md.max_token_per_chunk || 50)
-    let prompt = text.replace(/\s+/g, ' ').trim()
+    let prompt = text
+    if (md.replace_characters) {
+      //replace characters absent from the training data; a deleted quote can leave a sentence mark followed by a comma
+      for (const [from, to] of Object.entries(md.replace_characters)) prompt = prompt.split(from).join(to)
+      prompt = prompt.replace(/([.!?\u2026])\s*[,;:]/g, '$1')
+    }
+    prompt = prompt.replace(/\s+/g, ' ').trim()
     if (md.remove_semicolons) prompt = prompt.replace(/;/g, ',')
 
     const wordCount = prompt.split(' ').filter(Boolean).length
     const framesAfterEos = md.model_recommended_frames_after_eos != null
       ? Number(md.model_recommended_frames_after_eos)
-      : (wordCount <= 4 ? 3 : 1)
+      : (wordCount <= 4 ? 3 : 1) + (md.frames_after_eos_offset ?? 0)
 
     if (prompt && !/[A-ZÀ-Þ]/.test(prompt[0])) prompt = prompt[0].toUpperCase() + prompt.slice(1)
     if (prompt && /[0-9A-Za-zÀ-ÿ]/.test(prompt[prompt.length - 1])) prompt += '.'
@@ -344,6 +376,11 @@ function gaussian() {
   while (u === 0) u = Math.random()
   while (v === 0) v = Math.random()
   return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v)
+}
+
+function fadeIn(audio: Float32Array, length: number) {
+  const n = Math.min(length, audio.length)
+  for (let i = 0; i < n; i++) audio[i] *= i / n
 }
 
 function concat(parts: Float32Array[]) {

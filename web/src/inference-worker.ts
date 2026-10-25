@@ -46,6 +46,8 @@ async function initialize(args: Record<string, unknown>) {
   }
 
   const repoPath = typeof args.repoPath == 'string' ? args.repoPath : config.pocketRepoPath
+  //takes effect only before the first session is created
+  if (typeof args.numThreads == 'number') ort.env.wasm.numThreads = args.numThreads
 
   engine = await loadPocketTts(repoPath, {
     executionProviders: ['wasm'],
