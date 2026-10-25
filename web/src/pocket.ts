@@ -1,8 +1,9 @@
 import * as ort from 'onnxruntime-web'
 import { SentencePieceTokenizer } from './sentencepiece'
 
-// Pocket TTS inference over the ONNX export by KevinAHM (https://huggingface.co/KevinAHM/pocket-tts-onnx).
-// The pipeline mirrors the reference web worker at https://huggingface.co/spaces/KevinAHM/pocket-tts-web,
+// Pocket TTS inference over ONNX bundles made with export/ in this repo, or by KevinAHM
+// (https://huggingface.co/KevinAHM/pocket-tts-onnx), whose export it was first written for.
+// The pipeline mirrors his reference web worker at https://huggingface.co/spaces/KevinAHM/pocket-tts-web,
 // minus streaming playback, which we don't use. Voices are cloned from reference clips, the way
 // pocket-tts's get_state_for_audio_prompt does it; without its end_on_pause trimming, which the
 // precomputed catalog voices for this model weren't made with.

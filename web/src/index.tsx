@@ -147,16 +147,6 @@ function App() {
     waitingForExtensionInstall
   ])
 
-  //numSteps
-  const [numSteps, setNumSteps] = React.useState(() =>
-    Number(localStorage.getItem('numSteps') || '1')
-  )
-  React.useEffect(() => {
-    localStorage.setItem('numSteps', String(numSteps))
-  }, [
-    numSteps
-  ])
-
 
   return (
     <div className="container">
@@ -264,7 +254,7 @@ function App() {
                     <button type="button" className="btn btn-primary"
                       disabled={loadState == null || loadState == 'installing' || voiceList == null}
                       onClick={onInstall}>Install</button>
-                    <span className="ms-2">(160 MB)</span>
+                    <span className="ms-2">(60 MB)</span>
                   </>}
                   {isInstalled &&
                     <button type="button" className="btn btn-outline-danger"
@@ -274,18 +264,8 @@ function App() {
                 </div>
               </td>
               <td valign="top" style={{width: '50%'}}>
-                <label htmlFor="numSteps" className="form-label">
-                  <span>Quality (flow steps):</span>
-                  <span className="ms-2 text-secondary">{numSteps}</span>
-                </label>
-                <input type="range" className="form-range d-block" id="numSteps" required min="1" max="8"
-                  style={{maxWidth: 300}}
-                  value={numSteps}
-                  disabled={!isInstalled || loadState == 'loading' || loadState == 'in-use'}
-                  onChange={event => setNumSteps(Number(event.target.value))} />
-                <div className="form-text">
-                  Decrease quality if you experience speech gaps.
-                </div>
+                <span>Model:</span>
+                <a className="ms-2" target="_blank" href="https://huggingface.co/ken107/pocket-tts-onnx">{config.pocketModel}</a>
               </td>
             </tr>
           </tbody>
@@ -395,8 +375,10 @@ function App() {
                   (<a target="_blank" href="https://github.com/kyutai-labs/pocket-tts">GitHub</a>
                   , <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">HuggingFace</a>)
                   and licensed under <a target="_blank" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
-                  The in-browser ONNX version used here was exported
-                  by <a target="_blank" href="https://huggingface.co/KevinAHM/pocket-tts-onnx">KevinAHM</a>.
+                  This page runs its small English model, {config.pocketModel}, in your browser,
+                  converted to <a target="_blank" href="https://huggingface.co/ken107/pocket-tts-onnx">ONNX</a>.
+                  Thanks to <a target="_blank" href="https://huggingface.co/KevinAHM/pocket-tts-onnx">KevinAHM</a> for
+                  the original ONNX port.
                 </p>
                 <p>
                   After installation, you can use the Test form to synthesize text to audio for download.
@@ -733,7 +715,7 @@ function App() {
 
     //create speech
     speech.current?.cancel()
-    const thisSpeech = speech.current = makeSpeech(synthesizer.current, {voiceId, text, numSteps, playAudio}, {
+    const thisSpeech = speech.current = makeSpeech(synthesizer.current, {voiceId, text, numSteps: 1, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
       }

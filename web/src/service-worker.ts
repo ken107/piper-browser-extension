@@ -19,7 +19,6 @@ self.addEventListener('activate', (event: ExtendableEvent) =>
   event.waitUntil(
     Promise.all([
       removeOldCaches(),
-      removeObsoleteFiles(),
       self.clients.claim()
     ])
   )
@@ -54,12 +53,6 @@ async function removeOldCaches() {
       if (!allowed.includes(key)) return caches.delete(key);
     })
   );
-}
-
-//voices.bin (52 MB of precomputed voices) was replaced by cloning voices from their reference clips
-async function removeObsoleteFiles() {
-  const cache = await caches.open(config.pocketCacheKey);
-  await cache.delete(`${config.pocketRepoPath}/voices.bin`);
 }
 
 //the voice list is edited without an app version bump, so prefer the network, falling back to the cache offline
