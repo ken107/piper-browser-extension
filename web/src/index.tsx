@@ -340,12 +340,11 @@ function App() {
                   , <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">HuggingFace</a>).
                   The in-browser ONNX version used here was exported
                   by <a target="_blank" href="https://huggingface.co/KevinAHM/pocket-tts-onnx">KevinAHM</a>.
-                  These voices are synthesized in-browser, requiring no cloud subscriptions, and are entirely
-                  free to use.
                 </p>
                 <p>
-                  Synthesis runs on your CPU, so speed depends on your device;
-                  use the test form above to check it.
+                  After installation, you can use the Test form to synthesize text to audio for download.
+                  Synthesis happens locally on your CPU, and the synthesized audio is subject to each voice's
+                  <a target="_blank" href="https://huggingface.co/kyutai/tts-voices">license</a>.
                 </p>
               </div>
             </div>
