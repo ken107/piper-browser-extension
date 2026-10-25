@@ -2,6 +2,8 @@
 export interface MyVoice {
   readonly id: string
   readonly lang: string
+  readonly clip: string
+  readonly license: string
 }
 
 export interface InstallState {

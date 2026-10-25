@@ -18,7 +18,7 @@ class TransferableResult {
   constructor(public result: unknown, public transfer: Transferable[]) {}
 }
 
-const dispatcher = makeDispatcher("pocket-worker", {initialize, infer, dispose})
+const dispatcher = makeDispatcher("pocket-worker", {initialize, addVoice, infer, dispose})
 
 addEventListener("message", event => {
   //console.debug(event.data)
@@ -53,10 +53,25 @@ async function initialize(args: Record<string, unknown>) {
   })
 
   return {
+    sampleRate: engine.sampleRate,
     numThreads: ort.env.wasm.numThreads,
     hardwareConcurrency: navigator.hardwareConcurrency,
     crossOriginIsolated: self.crossOriginIsolated
   }
+}
+
+async function addVoice(args: Record<string, unknown>) {
+  if (!engine) {
+    throw new Error('Not initialized')
+  }
+
+  const { voiceId, clip } = args
+  if (typeof voiceId != 'string' || !(clip instanceof Float32Array)) {
+    throw new Error('Bad args')
+  }
+
+  //the encoder shares the model sessions with synthesis, which can't run concurrently
+  await mutex.runExclusive(() => engine!.addVoice(voiceId, clip))
 }
 
 async function infer(args: Record<string, unknown>) {

@@ -13,12 +13,13 @@ import config from "./config";
 //3 caches, cache on fetch only, versioning:
 //app cache: append ver to URL
 //ort cache: ver already part of URL
-//pocket: no ver in URL
+//pocket: no ver in URL, also holds the voices' reference clips
 
 self.addEventListener('activate', (event: ExtendableEvent) =>
   event.waitUntil(
     Promise.all([
       removeOldCaches(),
+      removeObsoleteFiles(),
       self.clients.claim()
     ])
   )
@@ -38,7 +39,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     event.respondWith(handleFetch(event, config.appCacheKey));
   } else if (url.startsWith(config.ortWasmPaths)) {
     event.respondWith(handleFetch(event, config.ortCacheKey));
-  } else if (url.startsWith(config.pocketRepoPath)) {
+  } else if (url.startsWith(config.pocketRepoPath) || url.startsWith(config.voicesRepoPath)) {
     event.respondWith(handleFetch(event, config.pocketCacheKey));
   }
 });
@@ -51,6 +52,12 @@ async function removeOldCaches() {
       if (!allowed.includes(key)) return caches.delete(key);
     })
   );
+}
+
+//voices.bin (52 MB of precomputed voices) was replaced by cloning voices from their reference clips
+async function removeObsoleteFiles() {
+  const cache = await caches.open(config.pocketCacheKey);
+  await cache.delete(`${config.pocketRepoPath}/voices.bin`);
 }
 
 async function handleFetch(event: FetchEvent, cacheKey: string) {

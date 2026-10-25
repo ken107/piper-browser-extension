@@ -1,4 +1,5 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
+import config from "./config"
 import { PcmData } from "./types"
 import { lazy } from "./utils"
 
@@ -19,6 +20,7 @@ const getWorker = lazy(() => {
 
 
 export interface EngineInfo {
+  sampleRate: number
   numThreads: number
   hardwareConcurrency: number
   crossOriginIsolated: boolean
@@ -32,10 +34,27 @@ export interface SynthesisStats {
 
 export function makeSynthesizer(repoPath: string, onSynthesized?: (stats: SynthesisStats) => void) {
   const readyPromise = getWorker().request<EngineInfo>("initialize", { repoPath })
+
+  //voices are cloned from their reference clips, added to the engine on first use
+  const addedVoices = new Map<string, Promise<void>>()
+  function ensureVoice(voiceId: string) {
+    let promise = addedVoices.get(voiceId)
+    if (!promise) {
+      const voice = config.voiceList.find(x => x.id == voiceId)
+      if (!voice) throw new Error(`Unknown voice: ${voiceId}`)
+      promise = readyPromise
+        .then(({sampleRate}) => loadClip(`${config.voicesRepoPath}/${voice.clip}`, sampleRate))
+        .then(clip => getWorker().request<void>("addVoice", {voiceId, clip}))
+      promise.catch(() => addedVoices.delete(voiceId))
+      addedVoices.set(voiceId, promise)
+    }
+    return promise
+  }
+
   return {
     readyPromise,
     async synthesize(text: string, voiceId: string, numSteps: number) {
-      await readyPromise
+      await ensureVoice(voiceId)
       const {synthMs, ...pcmData} = await getWorker().request<PcmData & {synthMs: number}>("infer", {text, voiceId, numSteps})
       const stats: SynthesisStats = {
         textLength: text.length,
@@ -51,4 +70,18 @@ export function makeSynthesizer(repoPath: string, onSynthesized?: (stats: Synthe
       await getWorker().request("dispose")
     }
   }
+}
+
+
+//decode the clip, resampled to the engine's sample rate (workers have no AudioContext), downmixed to mono
+async function loadClip(url: string, sampleRate: number) {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Failed to fetch ${url} (${res.status})`)
+  const audioBuffer = await new OfflineAudioContext(1, 1, sampleRate).decodeAudioData(await res.arrayBuffer())
+  const clip = new Float32Array(audioBuffer.length)
+  for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+    const channel = audioBuffer.getChannelData(c)
+    for (let i = 0; i < clip.length; i++) clip[i] += channel[i] / audioBuffer.numberOfChannels
+  }
+  return clip
 }

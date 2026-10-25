@@ -3,7 +3,9 @@ import { SentencePieceTokenizer } from './sentencepiece'
 
 // Pocket TTS inference over the ONNX export by KevinAHM (https://huggingface.co/KevinAHM/pocket-tts-onnx).
 // The pipeline mirrors the reference web worker at https://huggingface.co/spaces/KevinAHM/pocket-tts-web,
-// minus voice cloning (mimi_encoder) and streaming playback, which we don't use.
+// minus streaming playback, which we don't use. Voices are cloned from reference clips, the way
+// pocket-tts's get_state_for_audio_prompt does it; without its end_on_pause trimming, which the
+// precomputed catalog voices for this model weren't made with.
 
 type DType = 'float32'|'int64'|'bool'
 
@@ -24,7 +26,8 @@ interface BundleMetadata {
   conditioning_dim: number
   max_token_per_chunk?: number
   tokenizer_file: string
-  predefined_voices?: string[]
+  insert_bos_before_voice?: boolean
+  bos_before_voice_file?: string
   remove_semicolons?: boolean
   pad_with_spaces_for_short_inputs?: boolean
   model_recommended_frames_after_eos?: number
@@ -32,13 +35,6 @@ interface BundleMetadata {
   mimi_state_manifest: StateEntry[]
 }
 
-interface RawTensor {
-  data: Float32Array|BigInt64Array|Uint8Array
-  shape: number[]
-  dtype: DType
-}
-
-type VoiceRecord = Record<string, RawTensor>
 type State = Record<string, ort.Tensor>
 
 const TEMPERATURE = 0.7
@@ -46,6 +42,9 @@ const EOS_THRESHOLD = -4.0
 const MAX_FRAMES = 500
 const DECODE_FRAMES = 12
 const CHUNK_GAP_SECONDS = 0.25
+const MAX_CLIP_SECONDS = 30
+//voice states hold the full KV cache (~50 MB each), so keep only the most recently used
+const MAX_CACHED_VOICE_STATES = 2
 
 
 export async function loadPocketTts(repoPath: string, sessionOptions: ort.InferenceSession.SessionOptions) {
@@ -61,17 +60,19 @@ export async function loadPocketTts(repoPath: string, sessionOptions: ort.Infere
     fetchBytes(`${repoPath}/${metadata.tokenizer_file}`).then(bytes => new SentencePieceTokenizer(bytes)),
   ])
 
-  return new PocketTts(repoPath, metadata, tokenizer, textConditioner, flowLmMain, flowLmFlow, mimiDecoder)
+  return new PocketTts(repoPath, sessionOptions, metadata, tokenizer, textConditioner, flowLmMain, flowLmFlow, mimiDecoder)
 }
 
 
 export class PocketTts {
   readonly sampleRate: number
-  private voiceRecords: Promise<Record<string, VoiceRecord>>|undefined
+  private voiceEncoder: Promise<{ mimiEncoder: ort.InferenceSession, bosBeforeVoice: ort.Tensor|null }>|undefined
+  private readonly voiceEmbeddings = new Map<string, Promise<ort.Tensor>>()
   private readonly voiceStates = new Map<string, Promise<State>>()
 
   constructor(
     private readonly repoPath: string,
+    private readonly sessionOptions: ort.InferenceSession.SessionOptions,
     private readonly metadata: BundleMetadata,
     private readonly tokenizer: SentencePieceTokenizer,
     private readonly textConditioner: ort.InferenceSession,
@@ -82,19 +83,62 @@ export class PocketTts {
     this.sampleRate = Number(metadata.sample_rate)
   }
 
-  getVoiceState(voiceId: string) {
+  //encode a voice's reference clip (mono, at the model's sample rate) into its conditioning embedding
+  addVoice(voiceId: string, clip: Float32Array) {
+    const promise = this.encodeVoice(clip)
+    promise.catch(() => this.voiceEmbeddings.delete(voiceId))
+    this.voiceEmbeddings.set(voiceId, promise)
+    this.voiceStates.delete(voiceId)
+    return promise.then(() => {})
+  }
+
+  private async encodeVoice(clip: Float32Array) {
+    this.voiceEncoder ??= Promise.all([
+      ort.InferenceSession.create(`${this.repoPath}/mimi_encoder_int8.onnx`, this.sessionOptions),
+      this.metadata.insert_bos_before_voice
+        ? fetchBytes(`${this.repoPath}/${this.metadata.bos_before_voice_file || 'bos_before_voice.npy'}`).then(parseNpyFloat32)
+        : null
+    ]).then(([mimiEncoder, bosBeforeVoice]) => ({ mimiEncoder, bosBeforeVoice }))
+    this.voiceEncoder.catch(() => this.voiceEncoder = undefined)
+    const { mimiEncoder, bosBeforeVoice } = await this.voiceEncoder
+
+    const audio = clip.subarray(0, MAX_CLIP_SECONDS * this.sampleRate)
+    const result = await mimiEncoder.run({ audio: new ort.Tensor('float32', audio, [1, 1, audio.length]) })
+    const encoded = result[mimiEncoder.outputNames[0]]
+    const dim = encoded.dims[encoded.dims.length - 1]
+    const frames = encoded.dims[encoded.dims.length - 2]
+    const embedding = encoded.data as Float32Array
+    if (!bosBeforeVoice) return new ort.Tensor('float32', embedding, [1, frames, dim])
+
+    const bosFrames = bosBeforeVoice.dims[1]
+    const combined = new Float32Array(bosBeforeVoice.data.length + embedding.length)
+    combined.set(bosBeforeVoice.data as Float32Array)
+    combined.set(embedding, bosBeforeVoice.data.length)
+    return new ort.Tensor('float32', combined, [1, bosFrames + frames, dim])
+  }
+
+  //prompt the model with the voice embedding, the resulting KV cache is the voice's starting state
+  private getVoiceState(voiceId: string) {
     let promise = this.voiceStates.get(voiceId)
-    if (!promise) {
-      if (!this.voiceRecords) {
-        this.voiceRecords = fetchBytes(`${this.repoPath}/voices.bin`).then(bytes => parseVoicesBin(bytes.buffer as ArrayBuffer))
-      }
-      promise = this.voiceRecords.then(records => {
-        const record = records[voiceId]
-        if (!record) throw new Error(`Voice not found: ${voiceId}`)
-        return stateFromVoiceRecord(record, this.metadata.flow_lm_state_manifest)
+    if (promise) {
+      this.voiceStates.delete(voiceId)
+    }
+    else {
+      const embedding = this.voiceEmbeddings.get(voiceId)
+      if (!embedding) throw new Error(`Voice not added: ${voiceId}`)
+      promise = embedding.then(async voiceEmb => {
+        const state = initState(this.metadata.flow_lm_state_manifest)
+        const emptySeq = new ort.Tensor('float32', new Float32Array(0), [1, 0, Number(this.metadata.latent_dim)])
+        const result = await this.flowLmMain.run({ sequence: emptySeq, text_embeddings: voiceEmb, ...state })
+        updateState(state, result, this.metadata.flow_lm_state_manifest)
+        return state
       })
       promise.catch(() => this.voiceStates.delete(voiceId))
-      this.voiceStates.set(voiceId, promise)
+    }
+    //re-insert as most recently used, evicting the oldest
+    this.voiceStates.set(voiceId, promise)
+    while (this.voiceStates.size > MAX_CACHED_VOICE_STATES) {
+      this.voiceStates.delete(this.voiceStates.keys().next().value!)
     }
     return promise
   }
@@ -244,6 +288,7 @@ export class PocketTts {
       this.flowLmMain.release(),
       this.flowLmFlow.release(),
       this.mimiDecoder.release(),
+      this.voiceEncoder?.then(x => x.mimiEncoder.release()),
     ])
   }
 }
@@ -312,107 +357,15 @@ function concat(parts: Float32Array[]) {
 }
 
 
-//voices.bin holds the precomputed FlowLM state of each built-in voice
-
-function parseVoicesBin(buffer: ArrayBuffer) {
+function parseNpyFloat32(bytes: Uint8Array) {
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
   const view = new DataView(buffer)
-  const decoder = new TextDecoder()
-  let offset = 0
-  const readString = (len: number) => {
-    const s = decoder.decode(new Uint8Array(buffer, offset, len))
-    offset += len
-    return s
-  }
-
-  if (readString(5) != 'PTVB1') throw new Error('Invalid voices.bin header')
-  const voices: Record<string, VoiceRecord> = {}
-  const voiceCount = view.getUint32(offset, true); offset += 4
-
-  for (let v = 0; v < voiceCount; v++) {
-    const name = readString(view.getUint16(offset, true) + (offset += 2, 0))
-    const tensorCount = view.getUint16(offset, true); offset += 2
-    const tensors: VoiceRecord = {}
-
-    for (let t = 0; t < tensorCount; t++) {
-      const key = readString(view.getUint16(offset, true) + (offset += 2, 0))
-      const dtypeCode = view.getUint8(offset); offset += 1
-      const rank = view.getUint8(offset); offset += 1
-      const shape: number[] = []
-      for (let d = 0; d < rank; d++) {
-        shape.push(view.getUint32(offset, true)); offset += 4
-      }
-      const byteLength = view.getUint32(offset, true); offset += 4
-      const bytes = buffer.slice(offset, offset + byteLength)
-      offset += byteLength
-
-      if (dtypeCode == 0) tensors[key] = { data: new Float32Array(bytes), shape, dtype: 'float32' }
-      else if (dtypeCode == 1) tensors[key] = { data: new BigInt64Array(bytes), shape, dtype: 'int64' }
-      else if (dtypeCode == 2) tensors[key] = { data: new Uint8Array(bytes), shape, dtype: 'bool' }
-      else throw new Error(`Unsupported voices.bin dtype code: ${dtypeCode}`)
-    }
-    voices[name] = tensors
-  }
-  return voices
-}
-
-function stateFromVoiceRecord(record: VoiceRecord, manifest: StateEntry[]): State {
-  //group tensors by module, keys are "module/key"
-  const grouped: Record<string, Record<string, RawTensor>> = {}
-  for (const [k, value] of Object.entries(record)) {
-    const slash = k.indexOf('/')
-    if (slash == -1) continue
-    const mod = k.slice(0, slash)
-    ;(grouped[mod] ??= {})[k.slice(slash + 1)] = value
-  }
-
-  const state = initState(manifest)
-  for (const entry of manifest) {
-    const moduleState = grouped[entry.module!] ?? {}
-    const source = moduleState[entry.key!] ?? (entry.key == 'step' ? deriveStep(moduleState) : undefined)
-    if (source) state[entry.input_name] = makeTensor(entry.dtype, adaptData(source, entry), entry.shape)
-  }
-  return state
-}
-
-function deriveStep(moduleState: Record<string, RawTensor>): RawTensor {
-  const scalar = (n: bigint|number): RawTensor => ({ data: BigInt64Array.from([BigInt(n)]), shape: [1], dtype: 'int64' })
-  if (moduleState.offset && !moduleState.end_offset) return scalar(moduleState.offset.data[0])
-  if (moduleState.current_end) return scalar(moduleState.current_end.shape[0])
-  return scalar(0)
-}
-
-//copy the stored tensor into the shape the model's state input expects, truncating or zero-padding each dimension
-function adaptData(source: RawTensor, entry: StateEntry) {
-  const targetShape = entry.shape
-  const targetSize = targetShape.reduce((a, b) => a * b, 1)
-  const convert = () => entry.dtype == 'int64' ? new BigInt64Array(source.data as BigInt64Array)
-    : entry.dtype == 'bool' ? new Uint8Array(source.data as Uint8Array)
-    : new Float32Array(source.data as Float32Array)
-
-  if (source.data.length == targetSize) return convert()
-  const target = makeFilled(entry.dtype, targetShape, entry.fill)
-  if (source.shape.length != targetShape.length) return target
-
-  const rank = source.shape.length
-  const srcStrides = new Array<number>(rank)
-  const dstStrides = new Array<number>(rank)
-  for (let i = rank - 1, s = 1, d = 1; i >= 0; i--) {
-    srcStrides[i] = s; s *= source.shape[i]
-    dstStrides[i] = d; d *= targetShape[i]
-  }
-  const limits = source.shape.map((dim, i) => Math.min(dim, targetShape[i]))
-  if (limits.some(x => x == 0)) return target
-
-  const idx = new Array<number>(rank).fill(0)
-  for (;;) {
-    let si = 0, di = 0
-    for (let i = 0; i < rank; i++) {
-      si += idx[i] * srcStrides[i]
-      di += idx[i] * dstStrides[i]
-    }
-    target[di] = source.data[si] as any
-    let dim = rank - 1
-    while (dim >= 0 && ++idx[dim] >= limits[dim]) idx[dim--] = 0
-    if (dim < 0) return target
-  }
+  if (view.getUint8(0) != 0x93 || new TextDecoder().decode(new Uint8Array(buffer, 1, 5)) != 'NUMPY') throw new Error('Invalid NPY file')
+  const major = view.getUint8(6)
+  const headerLen = major == 1 ? view.getUint16(8, true) : view.getUint32(8, true)
+  const headerOffset = major == 1 ? 10 : 12
+  const header = new TextDecoder().decode(new Uint8Array(buffer, headerOffset, headerLen))
+  if (!/'descr':\s*'<f4'/.test(header) || /'fortran_order':\s*True/.test(header)) throw new Error('Unsupported NPY format')
+  const shape = header.match(/'shape':\s*\(([^)]*)\)/)![1].split(',').map(x => x.trim()).filter(Boolean).map(Number)
+  return new ort.Tensor('float32', new Float32Array(buffer, headerOffset + headerLen), shape)
 }

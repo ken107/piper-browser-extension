@@ -282,6 +282,7 @@ function App() {
             <tr>
               <th>Voice</th>
               <th>Language</th>
+              <th>License</th>
             </tr>
           </thead>
           <tbody>
@@ -292,10 +293,21 @@ function App() {
                 <span className="link" onClick={() => sampler.play(voice)}>sample</span>
               </td>
               <td className="align-top">{voice.lang}</td>
+              <td className="align-top">
+                <a target="_blank" href={`https://huggingface.co/kyutai/tts-voices/blob/main/${voice.clip}`}>{voice.license}</a>
+              </td>
             </tr>
           )}
           </tbody>
         </table>
+        <p className="text-muted small">
+          Each voice is cloned in your browser from a reference clip
+          in <a target="_blank" href="https://huggingface.co/kyutai/tts-voices">kyutai/tts-voices</a>.
+          Clips by Alba MacKenna (CC BY 4.0), from
+          the <a target="_blank" href="https://datashare.ed.ac.uk/handle/10283/3443">VCTK corpus</a> by
+          CSTR, University of Edinburgh (CC BY 4.0), from <a target="_blank" href="https://github.com/OwenTyme/voice-zero">Voice-Zero</a> (CC0),
+          and from the <a target="_blank" href="https://unmute.sh/voice-donation">Unmute Voice Donation Project</a> (CC0).
+        </p>
       </div>
 
       <div className="text-center text-muted small mb-2">
@@ -474,8 +486,15 @@ function App() {
           if (!synthesizer.current) synthesizer.current = createSynthesizer(config.pocketRepoPath)
           return synthesizer.current.readyPromise
             .then(async () => {
-              //install voices
-              await fetch(`${config.pocketRepoPath}/voices.bin`)
+              //install the voice encoder and the voices' reference clips, the SW caches them
+              await Promise.all([
+                fetch(`${config.pocketRepoPath}/mimi_encoder_int8.onnx`),
+                fetch(`${config.pocketRepoPath}/bos_before_voice.npy`),
+                ...config.voiceList.map(voice => fetch(`${config.voicesRepoPath}/${voice.clip}`)),
+              ].map(promise => promise.then(res => {
+                if (!res.ok) throw new Error(`Failed to fetch ${res.url} (${res.status})`)
+                return res.arrayBuffer()
+              })))
             })
             .catch(err => {
               synthesizer.current = null
