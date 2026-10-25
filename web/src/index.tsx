@@ -4,10 +4,10 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, messageDispatcher, parseAdvertisedVoiceName, sampler, uninstall } from "./services"
+import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, listDonatedVoices, loadVoiceList, messageDispatcher, parseAdvertisedVoiceName, registerVoice, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer, SynthesisStats } from "./synthesizer"
-import { InstallState, LoadState, PcmData, PlayAudio } from "./types"
+import { InstallState, LoadState, MyVoice, PcmData, PlayAudio } from "./types"
 import { assertNever, immediate, makeWav, printFileSize } from "./utils"
 
 navigator.serviceWorker.register('./sw.js');
@@ -26,6 +26,11 @@ function App() {
   const [showExtensionUninstallDialog, setShowExtensionUninstallDialog] = React.useState(false)
   const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number|null }[]>([])
   const [perf, setPerf] = React.useState({ count: 0, audioSeconds: 0, synthSeconds: 0 })
+  const [voiceList, setVoiceList] = React.useState<MyVoice[]|null>(null)
+  const [pickedVoices, setPickedVoices] = React.useState<MyVoice[]>([])
+  const [selectedVoice, setSelectedVoice] = React.useState('')
+  const [donations, setDonations] = React.useState<{ voices: MyVoice[]|null, error?: unknown }|null>(null)
+  const [donationFilter, setDonationFilter] = React.useState('')
   const [test, testUpdater] = useImmer({
     current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
     downloadUrl: null as string|null
@@ -68,6 +73,9 @@ function App() {
 
   //startup
   React.useEffect(() => {
+    loadVoiceList()
+      .then(setVoiceList)
+      .catch(reportError)
     ensureServiceWorkerIsControlling().then(() => {
       getInstallState()
         .then(state => {
@@ -80,10 +88,11 @@ function App() {
 
   //advertise voices
   React.useEffect(() => {
-    if (isInstalled != null)
-      advertiseVoices(isInstalled ? config.voiceList : [])
+    if (isInstalled != null && voiceList != null)
+      advertiseVoices(isInstalled ? voiceList : [])
   }, [
-    isInstalled
+    isInstalled,
+    voiceList
   ])
 
   //handle requests
@@ -165,11 +174,19 @@ function App() {
         <h2 className="text-muted">Test</h2>
         <form>
           <textarea className="form-control" rows={3} name="text" defaultValue={config.testSpeech} />
-          <select className="form-control mt-3" name="voice">
+          <select className="form-control mt-3" name="voice"
+            value={selectedVoice} onChange={event => setSelectedVoice(event.target.value)}>
             <option value="">Select a voice</option>
-            {isInstalled && config.voiceList.map(voice =>
-              <option key={voice.id} value={`PocketTTS ${voice.id}`}>{voice.id}</option>
+            {isInstalled && voiceList?.map(voice =>
+              <option key={voice.id} value={`PocketTTS ${voice.id}`}>{voice.label}</option>
             )}
+            {isInstalled && pickedVoices.length > 0 &&
+              <optgroup label="Voice donations">
+                {pickedVoices.map(voice =>
+                  <option key={voice.id} value={`PocketTTS ${voice.id}`}>{voice.label}</option>
+                )}
+              </optgroup>
+            }
           </select>
           <div className="d-flex align-items-center mt-3">
             {test.current == null &&
@@ -245,9 +262,9 @@ function App() {
                 <div className="mt-4">
                   {!isInstalled && <>
                     <button type="button" className="btn btn-primary"
-                      disabled={loadState == null || loadState == 'installing'}
+                      disabled={loadState == null || loadState == 'installing' || voiceList == null}
                       onClick={onInstall}>Install</button>
-                    <span className="ms-2">(178 MB)</span>
+                    <span className="ms-2">(160 MB)</span>
                   </>}
                   {isInstalled &&
                     <button type="button" className="btn btn-outline-danger"
@@ -282,19 +299,20 @@ function App() {
             <tr>
               <th>Voice</th>
               <th>Language</th>
-              <th>License</th>
+              <th>Source</th>
             </tr>
           </thead>
           <tbody>
-          {config.voiceList.map(voice =>
+          {voiceList?.map(voice =>
             <tr key={voice.id}>
               <td>
-                <span className="me-1">{voice.id}</span>
+                <span className="me-1">{voice.label}</span>
                 <span className="link" onClick={() => sampler.play(voice)}>sample</span>
               </td>
               <td className="align-top">{voice.lang}</td>
               <td className="align-top">
-                <a target="_blank" href={`https://huggingface.co/kyutai/tts-voices/blob/main/${voice.clip}`}>{voice.license}</a>
+                <a target="_blank" href={voice.sourceUrl}>{voice.source}</a>
+                <span className="ms-1">(<a target="_blank" href={voice.clip}>{voice.license}</a>)</span>
               </td>
             </tr>
           )}
@@ -303,11 +321,49 @@ function App() {
         <p className="text-muted small">
           Each voice is cloned in your browser from a reference clip
           in <a target="_blank" href="https://huggingface.co/kyutai/tts-voices">kyutai/tts-voices</a>.
-          Clips by Alba MacKenna (CC BY 4.0), from
-          the <a target="_blank" href="https://datashare.ed.ac.uk/handle/10283/3443">VCTK corpus</a> by
-          CSTR, University of Edinburgh (CC BY 4.0), from <a target="_blank" href="https://github.com/OwenTyme/voice-zero">Voice-Zero</a> (CC0),
-          and from the <a target="_blank" href="https://unmute.sh/voice-donation">Unmute Voice Donation Project</a> (CC0).
         </p>
+      </div>
+
+      <div className="mb-4">
+        <h2 className="text-muted">Voice Donations</h2>
+        {donations == null &&
+          <button type="button" className="btn btn-outline-secondary" onClick={onBrowseDonations}>Browse all donations</button>
+        }
+        {donations?.error != null &&
+          <div className="text-danger">Could not load the voice donations: {String(donations.error)}</div>
+        }
+        {donations && !donations.voices && donations.error == null &&
+          <div className="text-muted">Loading...</div>
+        }
+        {donations?.voices && <>
+          <p className="text-muted small">
+            Voices donated to the <a target="_blank" href="https://unmute.sh/voice-donation">Unmute Voice Donation Project</a> (CC0),
+            listed live from <a target="_blank" href="https://huggingface.co/kyutai/tts-voices/tree/main/voice-donations">kyutai/tts-voices</a>.
+            They are not curated: some are not in English, or are noisy, and the model only speaks English.
+          </p>
+          <input type="search" className="form-control mb-2" placeholder={`Search ${donations.voices.length} voices`}
+            value={donationFilter} onChange={event => setDonationFilter(event.target.value)} />
+          <div style={{maxHeight: 400, overflowY: 'auto'}}>
+            <table className="table table-sm table-bordered">
+              <tbody>
+              {donations.voices
+                .filter(voice => voice.label.toLowerCase().includes(donationFilter.trim().toLowerCase()))
+                .map(voice =>
+                  <tr key={voice.id}>
+                    <td>
+                      <span className="me-2">{voice.label}</span>
+                      <span className="link me-2" onClick={() => sampler.play(voice)}>play clip</span>
+                      {isInstalled &&
+                        <span className="link" onClick={() => onUseDonatedVoice(voice)}>use in test form</span>
+                      }
+                    </td>
+                  </tr>
+                )
+              }
+              </tbody>
+            </table>
+          </div>
+        </>}
       </div>
 
       <div className="text-center text-muted small mb-2">
@@ -489,7 +545,7 @@ function App() {
               await Promise.all([
                 fetch(`${config.pocketRepoPath}/mimi_encoder_int8.onnx`),
                 fetch(`${config.pocketRepoPath}/bos_before_voice.npy`),
-                ...config.voiceList.map(voice => fetch(`${config.voicesRepoPath}/${voice.clip}`)),
+                ...voiceList!.map(voice => fetch(voice.clip)),
               ].map(promise => promise.then(res => {
                 if (!res.ok) throw new Error(`Failed to fetch ${res.url} (${res.status})`)
                 return res.arrayBuffer()
@@ -744,6 +800,22 @@ function App() {
   function onSeek({index}: Record<string, unknown>) {
     if (typeof index != "number") throw new Error("Bad args")
     speech.current?.seek(index)
+  }
+
+  function onBrowseDonations() {
+    setDonations({ voices: null })
+    listDonatedVoices()
+      .then(voices => setDonations({ voices }))
+      .catch(error => setDonations({ voices: null, error }))
+  }
+
+  //donated clips aren't installed, the SW caches each one when it is first used
+  function onUseDonatedVoice(voice: MyVoice) {
+    registerVoice(voice)
+    setPickedVoices(voices => voices.some(x => x.id == voice.id) ? voices : [...voices, voice])
+    setSelectedVoice(`PocketTTS ${voice.id}`)
+    setShowTestForm(true)
+    scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {

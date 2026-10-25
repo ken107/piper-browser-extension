@@ -35,7 +35,9 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
   if (url.startsWith('http://localhost')) return;
 
-  if (url.startsWith(self.location.origin)) {
+  if (url.startsWith(self.registration.scope + 'voices.json')) {
+    event.respondWith(networkFirst(event.request, config.appCacheKey));
+  } else if (url.startsWith(self.location.origin)) {
     event.respondWith(handleFetch(event, config.appCacheKey));
   } else if (url.startsWith(config.ortWasmPaths)) {
     event.respondWith(handleFetch(event, config.ortCacheKey));
@@ -58,6 +60,22 @@ async function removeOldCaches() {
 async function removeObsoleteFiles() {
   const cache = await caches.open(config.pocketCacheKey);
   await cache.delete(`${config.pocketRepoPath}/voices.bin`);
+}
+
+//the voice list is edited without an app version bump, so prefer the network, falling back to the cache offline
+async function networkFirst(request: Request, cacheKey: string) {
+  try {
+    const response = await fetch(request, { cache: 'no-cache' });
+    if (response.ok) {
+      const cache = await caches.open(cacheKey);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch (err) {
+    const cachedResponse = await caches.match(request, { ignoreSearch: true });
+    if (cachedResponse) return cachedResponse;
+    throw err;
+  }
 }
 
 async function handleFetch(event: FetchEvent, cacheKey: string) {

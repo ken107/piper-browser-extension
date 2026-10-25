@@ -1,5 +1,5 @@
 import { makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import config from "./config"
+import { getVoice } from "./services"
 import { PcmData } from "./types"
 import { lazy } from "./utils"
 
@@ -40,10 +40,9 @@ export function makeSynthesizer(repoPath: string, onSynthesized?: (stats: Synthe
   function ensureVoice(voiceId: string) {
     let promise = addedVoices.get(voiceId)
     if (!promise) {
-      const voice = config.voiceList.find(x => x.id == voiceId)
-      if (!voice) throw new Error(`Unknown voice: ${voiceId}`)
+      const voice = getVoice(voiceId)
       promise = readyPromise
-        .then(({sampleRate}) => loadClip(`${config.voicesRepoPath}/${voice.clip}`, sampleRate))
+        .then(({sampleRate}) => loadClip(voice.clip, sampleRate))
         .then(clip => getWorker().request<void>("addVoice", {voiceId, clip}))
       promise.catch(() => addedVoices.delete(voiceId))
       addedVoices.set(voiceId, promise)
