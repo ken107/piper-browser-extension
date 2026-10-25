@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 
+import { appVersion } from "./version"
+
 declare const self: ServiceWorkerGlobalScope;
 export {};
 
@@ -9,11 +11,11 @@ export {};
 //any intermediary network caches)
 
 const myCache: Record<string, string[]> = {
-  'app-v18': [
-    '/?v=18',
-    '/index.html?v=18',
-    '/bundle.js?v=18',
-    '/inference-worker.js?v=18',
+  [`app-v${appVersion}`]: [
+    `/?v=${appVersion}`,
+    `/index.html?v=${appVersion}`,
+    `/bundle.js?v=${appVersion}`,
+    `/inference-worker.js?v=${appVersion}`,
   ],
   'bootstrap-v1': [
     '/bootstrap.min.css?v=1',

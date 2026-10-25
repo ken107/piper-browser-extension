@@ -3,7 +3,8 @@ import * as ReactDOM from "react-dom/client"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config from "./config"
-import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
+import { appVersion } from "./version"
+import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, getSpeakerMetadata, installVoice, makeAdvertisedVoiceList, messageDispatcher, parseAdvertisedVoiceName, sampler, updateStats } from "./services"
 import { makeSpeech } from "./speech"
 import * as storage from "./storage"
 import { makeSynthesizer } from "./synthesizer"
@@ -268,6 +269,7 @@ function App() {
         <span><a target="_blank" href="https://readaloud.app/tos.html" className="muted-link">Terms of Service</a> &mdash; </span>
         <span><a target="_blank" href="https://readaloud.app/privacy.html" className="muted-link">Privacy Policy</a> &mdash; </span>
         <span>&copy; <a target="_blank" href="https://lsdsoftware.com" className="muted-link">LSD Software</a></span>
+        <span> &mdash; Piper TTS v{appVersion}</span>
       </div>
 
       {state.showInfoBox &&
@@ -341,9 +343,9 @@ function App() {
       stateUpdater(draft => {
         draft.voiceList!.find(x => x.key == voice.key)!.installState = "installing"
       })
-      const {model, modelConfig} = await installVoice(voice, onProgress)
+      const {modelConfig} = await installVoice(voice, onProgress)
       stateUpdater(draft => {
-        draft.voiceList!.find(x => x.key == voice.key)!.installState = "installed"
+        Object.assign(draft.voiceList!.find(x => x.key == voice.key)!, getSpeakerMetadata(modelConfig, voice), {installState: "installed"})
       })
     }
     catch (err) {

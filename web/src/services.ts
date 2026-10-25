@@ -19,19 +19,9 @@ export async function getVoiceList(): Promise<MyVoice[]> {
     .map(voice => {
       const modelFile = Object.keys(voice.files).find(x => x.endsWith(".onnx"))
       if (!modelFile) throw new Error("Can't identify model file for " + voice.name)
-      const speakerList = Object.entries(voice.speaker_id_map ?? {})
-        .map(([name, id]) => ({name, id, tokens: name.split(/(\d+)/)}))
-        .sort((a, b) => {
-          for (let i = 0; i < Math.min(a.tokens.length, b.tokens.length); i++) {
-            const dif = i % 2 == 0 ? a.tokens[i].localeCompare(b.tokens[i]) : Number(a.tokens[i]) - Number(b.tokens[i])
-            if (dif != 0) return dif
-          }
-          return a.tokens.length - b.tokens.length
-        })
-        .map(({name, id}) => ({speakerName: name, speakerId: id}))
       return {
         ...voice,
-        speakerList,
+        ...getSpeakerMetadata(voice),
         modelFile,
         modelFileSize: voice.files[modelFile].size_bytes,
         installState: "not-installed" as InstallState,
@@ -40,11 +30,37 @@ export async function getVoiceList(): Promise<MyVoice[]> {
       }
     })
   for (const voice of voiceList) {
-    voice.installState = await getFile(voice.key + ".onnx")
-      .then(() => "installed" as const)
-      .catch(err => "not-installed")
+    try {
+      const {modelConfig} = await getInstalledVoice(voice.key)
+      Object.assign(voice, getSpeakerMetadata(modelConfig, voice), {installState: "installed"})
+    }
+    catch (err) {
+      if (!(err instanceof DOMException && err.name == "NotFoundError")) throw err
+    }
   }
   return voiceList
+}
+
+
+// Installed voices must use the speaker IDs belonging to their cached model,
+// even when the remote catalog has changed independently of the model files.
+export function getSpeakerMetadata(
+  modelConfig: Pick<ModelConfig, "num_speakers" | "speaker_id_map">,
+  catalog?: Pick<PiperVoice, "speaker_id_map">
+) {
+  // An explicitly empty map is authoritative too; only absent maps fall back.
+  const speaker_id_map = modelConfig.speaker_id_map ?? catalog?.speaker_id_map ?? {}
+  const speakerList = Object.entries(speaker_id_map)
+    .map(([name, id]) => ({name, id, tokens: name.split(/(\d+)/)}))
+    .sort((a, b) => {
+      for (let i = 0; i < Math.min(a.tokens.length, b.tokens.length); i++) {
+        const dif = i % 2 == 0 ? a.tokens[i].localeCompare(b.tokens[i]) : Number(a.tokens[i]) - Number(b.tokens[i])
+        if (dif != 0) return dif
+      }
+      return a.tokens.length - b.tokens.length
+    })
+    .map(({name, id}) => ({speakerName: name, speakerId: id}))
+  return {num_speakers: modelConfig.num_speakers, speaker_id_map, speakerList}
 }
 
 

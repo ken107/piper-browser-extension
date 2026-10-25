@@ -41,6 +41,8 @@ export type LoadState = "not-loaded"|"loading"|"loaded"
 export type PhonemeType = 'text'|'espeak'|'pinyin'
 
 export interface ModelConfig {
+  readonly num_speakers: number
+  readonly speaker_id_map?: Record<string, number>
   readonly audio?: {
     readonly sample_rate?: number
   }
