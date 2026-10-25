@@ -393,14 +393,21 @@ function App() {
                 <p>
                   Pocket TTS is a lightweight AI-powered text-to-speech model developed by Kyutai
                   (<a target="_blank" href="https://github.com/kyutai-labs/pocket-tts">GitHub</a>
-                  , <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">HuggingFace</a>).
+                  , <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">HuggingFace</a>)
+                  and licensed under <a target="_blank" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
                   The in-browser ONNX version used here was exported
                   by <a target="_blank" href="https://huggingface.co/KevinAHM/pocket-tts-onnx">KevinAHM</a>.
                 </p>
                 <p>
                   After installation, you can use the Test form to synthesize text to audio for download.
                   Synthesis happens locally on your CPU, and the synthesized audio is subject to each voice's
-                  <a target="_blank" href="https://huggingface.co/kyutai/tts-voices">license</a>.
+                  {" "}<a target="_blank" href="https://huggingface.co/kyutai/tts-voices">license</a>.
+                </p>
+                <p>
+                  By using this page you agree to follow
+                  Kyutai's <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">prohibited use policy</a>:
+                  do not use it to impersonate anyone or clone a voice without their explicit and lawful consent,
+                  or to deceive, defraud or harm others.
                 </p>
               </div>
             </div>
