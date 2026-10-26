@@ -3,7 +3,7 @@
 declare const self: ServiceWorkerGlobalScope;
 export {};
 
-import config from "./config";
+import config, { pocketModels } from "./config";
 
 //On app update, besides switching cache bucket, we need to force browser to get the latest versions
 //from the network by also changing the query string of every resource
@@ -40,7 +40,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     event.respondWith(handleFetch(event, config.appCacheKey));
   } else if (url.startsWith(config.ortWasmPaths)) {
     event.respondWith(handleFetch(event, config.ortCacheKey));
-  } else if (url.startsWith(config.pocketRepoPath) || url.startsWith(config.voicesRepoPath)) {
+  } else if (pocketModels.some(model => url.startsWith(model.repoPath + '/')) || url.startsWith(config.voicesRepoPath)) {
     event.respondWith(handleFetch(event, config.pocketCacheKey));
   }
 });

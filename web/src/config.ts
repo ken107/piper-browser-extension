@@ -1,4 +1,11 @@
-const appVer = '5'
+export const pocketModels = [
+  { id: 'english_18m_refl_2026-10', label: '18m', repoPath: 'https://huggingface.co/ken107/pocket-tts-onnx/resolve/1051c1f9d3177e8050411dd3e173547b88058a35/english_18m_refl_2026-10' },
+  { id: 'english_7m_refl_2026-10', label: '7m', repoPath: 'https://huggingface.co/ken107/pocket-tts-onnx/resolve/65bae7f27143c54094a4d2b23bd064b5a63b7ae7/english_7m_refl_2026-10' },
+] as const
+
+export type PocketModel = typeof pocketModels[number]
+
+const appVer = '6'
 const ortVer = '1.23.2'
 const pocketVer = '2'
 
@@ -11,8 +18,8 @@ export default {
 
   pocketCacheKey: `pocket-${pocketVer}`,
   //INT8 ONNX export made with export/, pinned to a commit so cached files stay consistent
-  pocketModel: 'english_18m_refl_2026-10',
-  pocketRepoPath: 'https://huggingface.co/ken107/pocket-tts-onnx/resolve/1051c1f9d3177e8050411dd3e173547b88058a35/english_18m_refl_2026-10',
+  pocketModel: pocketModels[0].id,
+  pocketRepoPath: pocketModels[0].repoPath,
   //reference clips the voices are cloned from, cached with the model files
   voicesRepoPath: 'https://huggingface.co/kyutai/tts-voices/resolve/main',
   voicesApiPath: 'https://huggingface.co/api/models/kyutai/tts-voices',

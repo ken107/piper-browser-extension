@@ -3,8 +3,8 @@ import * as ReactDOM from "react-dom/client"
 import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
-import config from "./config"
-import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, listDonatedVoices, loadVoiceList, messageDispatcher, parseAdvertisedVoiceName, registerVoice, sampler, uninstall } from "./services"
+import config, { pocketModels, PocketModel } from "./config"
+import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, loadModel, saveModel, listDonatedVoices, loadVoiceList, messageDispatcher, parseAdvertisedVoiceName, registerVoice, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer, SynthesisStats } from "./synthesizer"
 import { InstallState, LoadState, MyVoice, PcmData, PlayAudio } from "./types"
@@ -16,6 +16,8 @@ ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 
 function App() {
+  const [selectedModel, setSelectedModel] = React.useState(loadModel)
+  const installing = React.useRef(false)
   const [installState, setInstallState] = React.useState<InstallState|null>(null)
   const [loadState, setLoadState] = React.useState<LoadState|null>(null)
   const [activityLog, setActivityLog] = React.useState("")
@@ -78,7 +80,7 @@ function App() {
       .then(setVoiceList)
       .catch(reportError)
     ensureServiceWorkerIsControlling().then(() => {
-      getInstallState()
+      getInstallState(selectedModel)
         .then(state => {
           setInstallState(state)
           setLoadState(state ? 'installed' : 'not-installed')
@@ -126,7 +128,7 @@ function App() {
       rxjs.startWith(null),
       rxjs.switchMap(() => document.visibilityState == 'visible'
         ? rxjs.timer(0, 3000).pipe(
-            rxjs.exhaustMap(() => rxjs.from(getInstallState()))
+            rxjs.exhaustMap(() => rxjs.from(getInstallState(selectedModel)))
           )
         : rxjs.EMPTY
       )
@@ -145,7 +147,8 @@ function App() {
     return () => subscription.unsubscribe()
   }, [
     showInstallDialog,
-    waitingForExtensionInstall
+    waitingForExtensionInstall,
+    selectedModel
   ])
 
 
@@ -255,7 +258,7 @@ function App() {
                     <button type="button" className="btn btn-primary"
                       disabled={loadState == null || loadState == 'installing' || voiceList == null}
                       onClick={onInstall}>Install</button>
-                    <span className="ms-2">(60 MB)</span>
+
                   </>}
                   {isInstalled &&
                     <button type="button" className="btn btn-outline-danger"
@@ -265,8 +268,13 @@ function App() {
                 </div>
               </td>
               <td valign="top" style={{width: '50%'}}>
-                <span>Model:</span>
-                <a className="ms-2" target="_blank" href="https://huggingface.co/ken107/pocket-tts-onnx">{config.pocketModel}</a>
+                <label htmlFor="model">Model</label>
+                <select id="model" className="form-select mt-1" value={selectedModel.id}
+                  disabled={loadState == null || loadState == 'installing' || loadState == 'loading' || loadState == 'in-use' || voiceList == null}
+                  onChange={event => onModelChange(event.target.value)}>
+                  {pocketModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+                <div className="form-text">Changing models after installation installs the selected variant.</div>
                 {isInstalled &&
                   <fieldset className="mt-3" disabled={loadState == 'in-use'}>
                     {([
@@ -398,7 +406,7 @@ function App() {
                   (<a target="_blank" href="https://github.com/kyutai-labs/pocket-tts">GitHub</a>
                   , <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">HuggingFace</a>)
                   and licensed under <a target="_blank" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
-                  This page runs its small English model, {config.pocketModel}, in your browser,
+                  This page runs its small English model, {selectedModel.id}, in your browser,
                   converted to <a target="_blank" href="https://huggingface.co/ken107/pocket-tts-onnx">ONNX</a>.
                   Thanks to <a target="_blank" href="https://huggingface.co/KevinAHM/pocket-tts-onnx">KevinAHM</a> for
                   the original ONNX port.
@@ -466,7 +474,7 @@ function App() {
                     setShowInstallDialog(false)
                   }}>Cancel</button>
                 <button type="button" className="btn btn-primary"
-                  onClick={onInstallToBrowserCache}>Install to browser cache</button>
+                  onClick={() => onInstallToBrowserCache()}>Install to browser cache</button>
               </div>
             </div>
           </div>
@@ -520,9 +528,17 @@ function App() {
     setActivityLog(log => log + text + '\n')
   }
 
+  function onModelChange(id: string) {
+    const model = pocketModels.find(model => model.id == id)
+    if (!model || model.id == selectedModel.id || installing.current || speech.current || loadState == 'loading') return
+    setSelectedModel(model)
+    saveModel(model)
+    if (isInstalled) onInstallToBrowserCache(model)
+  }
+
   async function onInstall() {
     try {
-      const state = await getInstallState()
+      const state = await getInstallState(selectedModel)
       if (state) {
         setInstallState(state)
         setLoadState('installed')
@@ -537,7 +553,9 @@ function App() {
     }
   }
 
-  function onInstallToBrowserCache() {
+  function onInstallToBrowserCache(model: PocketModel = selectedModel) {
+    if (installing.current || speech.current) return
+    installing.current = true
     setWaitingForExtensionInstall(false)
     setShowInstallDialog(false)
     navigator.storage.persist()
@@ -549,22 +567,28 @@ function App() {
 
     rxjs.fromEvent(navigator.serviceWorker, 'message', (e: MessageEvent) => e).pipe(
       rxjs.takeUntil(
-        rxjs.defer(() => {
-          if (!synthesizer.current) synthesizer.current = createSynthesizer(config.pocketRepoPath)
+        rxjs.defer(async () => {
+          const previous = synthesizer.current
+          synthesizer.current = null
+          if (previous) await previous.dispose()
+          synthesizer.current = createSynthesizer(model.repoPath)
           return synthesizer.current.readyPromise
             .then(async () => {
               //install the voice encoder and the voices' reference clips, the SW caches them
               await Promise.all([
-                fetch(`${config.pocketRepoPath}/mimi_encoder_int8.onnx`),
-                fetch(`${config.pocketRepoPath}/bos_before_voice.npy`),
+                fetch(`${model.repoPath}/mimi_encoder_int8.onnx`),
+                fetch(`${model.repoPath}/bos_before_voice.npy`),
                 ...voiceList!.map(voice => fetch(voice.clip)),
               ].map(promise => promise.then(res => {
                 if (!res.ok) throw new Error(`Failed to fetch ${res.url} (${res.status})`)
                 return res.arrayBuffer()
               })))
             })
-            .catch(err => {
+            .catch(async err => {
+              //A download can fail after the engine is ready; release it before retrying.
+              const failed = synthesizer.current
               synthesizer.current = null
+              await failed?.dispose().catch(console.error)
               throw err
             })
         })
@@ -582,15 +606,20 @@ function App() {
         }
       },
       complete() {
+        installing.current = false
+        setPerf({ count: 0, audioSeconds: 0, synthSeconds: 0 })
         setInstallState({
           repoType: 'cache',
-          repoPath: config.pocketRepoPath
+          repoPath: model.repoPath
         })
         setLoadState('loaded')
         setInstallProgress([])
         setShowTestForm(true)
       },
       error(err) {
+        installing.current = false
+        setInstallState(null)
+        setInstallProgress([])
         setLoadState('not-installed')
         reportError(err)
       }
@@ -716,6 +745,7 @@ function App() {
     playAudio: PlayAudio,
     callback(method: string, args?: Record<string, unknown>): void
   }) {
+    if (installing.current) throw new Error('Model installation in progress')
     if (loadState == null) throw new Error('Service not yet available')
     switch (loadState) {
       case 'not-installed':

@@ -1,11 +1,21 @@
 import { Message, makeDispatcher } from "@lsdsoftware/message-dispatcher"
-import config from "./config"
+import config, { pocketModels, PocketModel } from "./config"
 import { InstallState, MyVoice } from "./types"
 import { immediate } from "./utils"
 
 
-export async function getInstallState(): Promise<InstallState|null> {
-  if (config.extensionUrl) {
+export function loadModel(): PocketModel {
+  try {
+    return pocketModels.find(model => model.id == localStorage.getItem('pocketModel')) ?? pocketModels[0]
+  } catch { return pocketModels[0] }
+}
+
+export function saveModel(model: PocketModel) {
+  try { localStorage.setItem('pocketModel', model.id) } catch {}
+}
+
+export async function getInstallState(model: PocketModel = loadModel()): Promise<InstallState|null> {
+  if (config.extensionUrl && model.id == pocketModels[0].id) {
     const res = await fetch(`${config.extensionUrl}/${config.installables[0]}`, { method: 'HEAD' }).catch(err => ({ ok: false }))
     if (res.ok) {
       return {
@@ -16,11 +26,11 @@ export async function getInstallState(): Promise<InstallState|null> {
   }
   const cache = await caches.open(config.pocketCacheKey)
   for (const file of config.installables) {
-    if (!await cache.match(`${config.pocketRepoPath}/${file}`)) return null
+    if (!await cache.match(`${model.repoPath}/${file}`)) return null
   }
   return {
     repoType: 'cache',
-    repoPath: config.pocketRepoPath
+    repoPath: model.repoPath
   }
 }
 
