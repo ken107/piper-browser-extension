@@ -1,4 +1,4 @@
-const appVer = '3'
+const appVer = '4'
 const ortVer = '1.23.2'
 const pocketVer = '2'
 
@@ -32,8 +32,9 @@ export default {
   extensionStoreUrl: null as string|null,
 
   numPhonemesToPrefetch: 100,
-  paragraphSilenceSeconds: .75,
-  sentenceSilenceSeconds: .3,
+  //defaults for the pause settings in the Options section
+  paragraphSilenceSeconds: .85,
+  sentenceSilenceSeconds: .4,
 
   testSpeech: "It is a period of civil war. Rebel spaceships, striking from a hidden base, have won their first victory against the evil Galactic Empire. During the battle, Rebel spies managed to steal secret plans to the Empire's ultimate weapon, the DEATH STAR, an armored space station with enough power to destroy an entire planet. Pursued by the Empire's sinister agents, Princess Leia races home aboard her starship, custodian of the stolen plans that can save her people and restore freedom to the galaxy...",
 }

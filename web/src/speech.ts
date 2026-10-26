@@ -8,6 +8,8 @@ interface SpeakOptions {
   readonly text: string,
   readonly voiceId: string
   readonly numSteps: number
+  readonly sentenceSilenceSeconds: number
+  readonly paragraphSilenceSeconds: number
   playAudio: PlayAudio
 }
 
@@ -192,7 +194,7 @@ function makeSentences(
       text,
       startIndex: indices[i],
       endIndex: indices[i+1],
-      silenceSeconds: /\n\s*$/.test(text) ? config.paragraphSilenceSeconds : config.sentenceSilenceSeconds,
+      silenceSeconds: /\n\s*$/.test(text) ? opts.paragraphSilenceSeconds : opts.sentenceSilenceSeconds,
       getPcmData: lazy(() => synth.synthesize(text, opts.voiceId, opts.numSteps))
     }
   })

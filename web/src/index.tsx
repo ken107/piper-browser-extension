@@ -31,6 +31,7 @@ function App() {
   const [selectedVoice, setSelectedVoice] = React.useState('')
   const [donations, setDonations] = React.useState<{ voices: MyVoice[]|null, error?: unknown }|null>(null)
   const [donationFilter, setDonationFilter] = React.useState('')
+  const [pauses, setPauses] = React.useState(loadPauses)
   const [test, testUpdater] = useImmer({
     current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
     downloadUrl: null as string|null
@@ -266,6 +267,28 @@ function App() {
               <td valign="top" style={{width: '50%'}}>
                 <span>Model:</span>
                 <a className="ms-2" target="_blank" href="https://huggingface.co/ken107/pocket-tts-onnx">{config.pocketModel}</a>
+                {isInstalled &&
+                  <fieldset className="mt-3" disabled={loadState == 'in-use'}>
+                    {([
+                      ['sentenceSilenceSeconds', 'Pause between sentences'],
+                      ['paragraphSilenceSeconds', 'Pause between paragraphs'],
+                    ] as const).map(([key, label]) =>
+                      <div key={key} className="d-flex align-items-center mb-2">
+                        <label htmlFor={key} className="me-2" style={{minWidth: '12em'}}>{label}</label>
+                        <input type="number" id={key} className="form-control form-control-sm" style={{width: '6em'}}
+                          min={0} max={5} step={0.05} value={pauses[key]}
+                          onChange={e => {
+                            const value = e.target.valueAsNumber
+                            if (isNaN(value) || value < 0 || value > 5) return
+                            const next = {...pauses, [key]: value}
+                            setPauses(next)
+                            savePauses(next)
+                          }} />
+                        <span className="ms-1">s</span>
+                      </div>
+                    )}
+                  </fieldset>
+                }
               </td>
             </tr>
           </tbody>
@@ -715,7 +738,7 @@ function App() {
 
     //create speech
     speech.current?.cancel()
-    const thisSpeech = speech.current = makeSpeech(synthesizer.current, {voiceId, text, numSteps: 1, playAudio}, {
+    const thisSpeech = speech.current = makeSpeech(synthesizer.current, {voiceId, text, numSteps: 1, ...pauses, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
       }
@@ -878,4 +901,27 @@ function App() {
       draft.current = null
     })
   }
+}
+
+
+//pause settings persist in localStorage, which may be unavailable
+function loadPauses() {
+  const defaults = {
+    sentenceSilenceSeconds: config.sentenceSilenceSeconds,
+    paragraphSilenceSeconds: config.paragraphSilenceSeconds,
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem('pauses') ?? 'null')
+    if (saved && typeof saved.sentenceSilenceSeconds == 'number' && typeof saved.paragraphSilenceSeconds == 'number')
+      return {sentenceSilenceSeconds: saved.sentenceSilenceSeconds, paragraphSilenceSeconds: saved.paragraphSilenceSeconds}
+  }
+  catch {}
+  return defaults
+}
+
+function savePauses(pauses: ReturnType<typeof loadPauses>) {
+  try {
+    localStorage.setItem('pauses', JSON.stringify(pauses))
+  }
+  catch {}
 }
