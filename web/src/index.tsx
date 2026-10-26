@@ -268,35 +268,45 @@ function App() {
                 </div>
               </td>
               <td valign="top" style={{width: '50%'}}>
-                <label htmlFor="model">Model</label>
-                <select id="model" className="form-select mt-1" value={selectedModel.id}
-                  disabled={loadState == null || loadState == 'installing' || loadState == 'loading' || loadState == 'in-use' || voiceList == null}
-                  onChange={event => onModelChange(event.target.value)}>
-                  {pocketModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
-                </select>
-                <div className="form-text">Changing models after installation installs the selected variant.</div>
-                {isInstalled &&
-                  <fieldset className="mt-3" disabled={loadState == 'in-use'}>
-                    {([
+                <table className="table table-borderless align-middle mb-0" aria-label="Options">
+                  <tbody>
+                    <tr>
+                      <th scope="row" className="fw-normal"><label htmlFor="model">Model</label></th>
+                      <td>
+                        <select id="model" className="form-select" value={selectedModel.id}
+                          aria-describedby="model-hint"
+                          disabled={loadState == null || loadState == 'installing' || loadState == 'loading' || loadState == 'in-use' || voiceList == null}
+                          onChange={event => onModelChange(event.target.value)}>
+                          {pocketModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
+                        </select>
+                        <div id="model-hint" className="form-text">If speech is slow or has gaps, choose the faster 7m model. Changing models after installation installs the selected variant.</div>
+                      </td>
+                    </tr>
+                    {isInstalled && ([
                       ['sentenceSilenceSeconds', 'Pause between sentences'],
                       ['paragraphSilenceSeconds', 'Pause between paragraphs'],
                     ] as const).map(([key, label]) =>
-                      <div key={key} className="d-flex align-items-center mb-2">
-                        <label htmlFor={key} className="me-2" style={{minWidth: '12em'}}>{label}</label>
-                        <input type="number" id={key} className="form-control form-control-sm" style={{width: '6em'}}
-                          min={0} max={5} step={0.05} value={pauses[key]}
-                          onChange={e => {
-                            const value = e.target.valueAsNumber
-                            if (isNaN(value) || value < 0 || value > 5) return
-                            const next = {...pauses, [key]: value}
-                            setPauses(next)
-                            savePauses(next)
-                          }} />
-                        <span className="ms-1">s</span>
-                      </div>
+                      <tr key={key}>
+                        <th scope="row" className="fw-normal"><label htmlFor={key}>{label}</label></th>
+                        <td>
+                          <div className="d-flex align-items-center">
+                            <input type="number" id={key} className="form-control" style={{width: '6em'}}
+                              disabled={loadState == 'in-use'}
+                              min={0} max={5} step={0.05} value={pauses[key]}
+                              onChange={e => {
+                                const value = e.target.valueAsNumber
+                                if (isNaN(value) || value < 0 || value > 5) return
+                                const next = {...pauses, [key]: value}
+                                setPauses(next)
+                                savePauses(next)
+                              }} />
+                            <span className="ms-1">s</span>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </fieldset>
-                }
+                  </tbody>
+                </table>
               </td>
             </tr>
           </tbody>
@@ -402,25 +412,27 @@ function App() {
               </div>
               <div className="modal-body">
                 <p>
-                  Pocket TTS is a lightweight AI-powered text-to-speech model developed by Kyutai
-                  (<a target="_blank" href="https://github.com/kyutai-labs/pocket-tts">GitHub</a>
-                  , <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">HuggingFace</a>)
-                  and licensed under <a target="_blank" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
-                  This page runs its small English model, {selectedModel.id}, in your browser,
-                  converted to <a target="_blank" href="https://huggingface.co/ken107/pocket-tts-onnx">ONNX</a>.
+                  Pocket TTS is a lightweight text-to-speech model developed by
+                  {" "}<a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">Kyutai</a>.
+                  This page runs its small English models locally in your browser to turn text into speech.
+                  You can choose a model in Options.
+                </p>
+                <p>
+                  The model weights are licensed under
+                  {" "}<a target="_blank" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>
+                  {" "}and have been converted to
+                  {" "}<a target="_blank" href="https://huggingface.co/ken107/pocket-tts-onnx">ONNX format</a>
+                  {" "}for browser use.
                   Thanks to <a target="_blank" href="https://huggingface.co/KevinAHM/pocket-tts-onnx">KevinAHM</a> for
                   the original ONNX port.
                 </p>
                 <p>
-                  After installation, you can use the Test form to synthesize text to audio for download.
-                  Synthesis happens locally on your CPU, and the synthesized audio is subject to each voice's
-                  {" "}<a target="_blank" href="https://huggingface.co/kyutai/tts-voices">license</a>.
-                </p>
-                <p>
-                  By using this page you agree to follow
-                  Kyutai's <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts">prohibited use policy</a>:
-                  do not use it to impersonate anyone or clone a voice without their explicit and lawful consent,
-                  or to deceive, defraud or harm others.
+                  Voice recordings have separate
+                  {" "}<a target="_blank" href="https://huggingface.co/kyutai/tts-voices">licenses</a>.
+                  Review the selected voice's terms before using or sharing generated audio.
+                  Follow Kyutai's <a target="_blank" href="https://huggingface.co/kyutai/pocket-tts#prohibited-use">usage policy</a>:
+                  do not impersonate anyone or clone a voice without explicit, lawful consent,
+                  or use generated audio to deceive, defraud, or harm others.
                 </p>
               </div>
             </div>

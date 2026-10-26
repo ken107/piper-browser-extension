@@ -1,6 +1,6 @@
 export const pocketModels = [
   { id: 'english_18m_refl_2026-10', label: '18m', repoPath: 'https://huggingface.co/ken107/pocket-tts-onnx/resolve/1051c1f9d3177e8050411dd3e173547b88058a35/english_18m_refl_2026-10' },
-  { id: 'english_7m_refl_2026-10', label: '7m', repoPath: 'https://huggingface.co/ken107/pocket-tts-onnx/resolve/65bae7f27143c54094a4d2b23bd064b5a63b7ae7/english_7m_refl_2026-10' },
+  { id: 'english_7m_refl_2026-10', label: '7m, faster', repoPath: 'https://huggingface.co/ken107/pocket-tts-onnx/resolve/65bae7f27143c54094a4d2b23bd064b5a63b7ae7/english_7m_refl_2026-10' },
 ] as const
 
 export type PocketModel = typeof pocketModels[number]
