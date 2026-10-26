@@ -52,6 +52,7 @@ export function makeSynthesizer(repoPath: string, onSynthesized?: (stats: Synthe
 
   return {
     readyPromise,
+    prepareVoice: ensureVoice,
     async synthesize(text: string, voiceId: string, numSteps: number) {
       await ensureVoice(voiceId)
       const {synthMs, ...pcmData} = await getWorker().request<PcmData & {synthMs: number}>("infer", {text, voiceId, numSteps})

@@ -105,7 +105,8 @@ export class PocketTts {
     promise.catch(() => this.voiceEmbeddings.delete(voiceId))
     this.voiceEmbeddings.set(voiceId, promise)
     this.voiceStates.delete(voiceId)
-    return promise.then(() => {})
+    //also prompt the model with it now, so the voice is fully prepared before its first synthesis
+    return promise.then(() => this.getVoiceState(voiceId)).then(() => {})
   }
 
   private async encodeVoice(clip: Float32Array) {

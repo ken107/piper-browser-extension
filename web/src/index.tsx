@@ -767,6 +767,10 @@ function App() {
         //play speech
         try {
           setLoadState('in-use')
+          //the first use of a voice clones it from its clip, which takes a moment; hold off onStart
+          //until it's done so the caller's progress indicator covers it
+          await synthesizer.current!.prepareVoice(voiceId)
+          if (speech.current != thisSpeech) return
           notifyCaller("onStart", {sentenceStartIndicies: thisSpeech.sentenceStartIndicies})
           await thisSpeech.play()
           notifyCaller("onEnd")
