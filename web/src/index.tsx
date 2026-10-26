@@ -4,7 +4,7 @@ import * as rxjs from "rxjs"
 import { useImmer } from "use-immer"
 import { playAudio } from "./audio"
 import config, { pocketModels, PocketModel } from "./config"
-import { advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, loadModel, saveModel, listDonatedVoices, loadVoiceList, messageDispatcher, parseAdvertisedVoiceName, registerVoice, sampler, uninstall } from "./services"
+import { addedVoicesStorageKey, loadAddedVoices, saveAddedVoices, advertiseVoices, ensureServiceWorkerIsControlling, getInstallState, loadModel, saveModel, listDonatedVoices, loadVoiceList, messageDispatcher, parseAdvertisedVoiceName, registerVoice, sampler, uninstall } from "./services"
 import { makeSpeech } from "./speech"
 import { makeSynthesizer, SynthesisStats } from "./synthesizer"
 import { InstallState, LoadState, MyVoice, PcmData, PlayAudio } from "./types"
@@ -29,7 +29,13 @@ function App() {
   const [installProgress, setInstallProgress] = useImmer<{ file: string, loaded: number, total: number|null }[]>([])
   const [perf, setPerf] = React.useState({ count: 0, audioSeconds: 0, synthSeconds: 0 })
   const [voiceList, setVoiceList] = React.useState<MyVoice[]|null>(null)
-  const [pickedVoices, setPickedVoices] = React.useState<MyVoice[]>([])
+  const [addedVoices, setAddedVoices] = React.useState(loadAddedVoices)
+  const availableVoices = React.useMemo(() => {
+    if (!voiceList) return null
+    const voices = new Map(voiceList.map(voice => [voice.id, voice]))
+    for (const voice of addedVoices) if (!voices.has(voice.id)) voices.set(voice.id, voice)
+    return [...voices.values()]
+  }, [voiceList, addedVoices])
   const [selectedVoice, setSelectedVoice] = React.useState('')
   const [donations, setDonations] = React.useState<{ voices: MyVoice[]|null, error?: unknown }|null>(null)
   const [donationFilter, setDonationFilter] = React.useState('')
@@ -89,13 +95,29 @@ function App() {
     })
   }, [])
 
-  //advertise voices
+  //Keep saved donations in sync with other open pages on this origin.
   React.useEffect(() => {
-    if (isInstalled != null && voiceList != null)
-      advertiseVoices(isInstalled ? voiceList : [])
+    const onStorage = (event: StorageEvent) => {
+      if (event.key == addedVoicesStorageKey || event.key == null) setAddedVoices(loadAddedVoices())
+    }
+    addEventListener('storage', onStorage)
+    return () => removeEventListener('storage', onStorage)
+  }, [])
+
+  React.useEffect(() => {
+    if (selectedVoice && availableVoices && !availableVoices.some(voice => `PocketTTS ${voice.id}` == selectedVoice))
+      setSelectedVoice('')
+  }, [availableVoices, selectedVoice])
+
+  //Register restored donations before announcing them to extension clients.
+  React.useEffect(() => {
+    if (availableVoices) availableVoices.forEach(registerVoice)
+    if (isInstalled != null && availableVoices != null)
+      advertiseVoices(isInstalled ? availableVoices : [], selectedModel.lang)
   }, [
     isInstalled,
-    voiceList
+    availableVoices,
+    selectedModel.lang
   ])
 
   //handle requests
@@ -171,16 +193,10 @@ function App() {
           <select className="form-control mt-3" name="voice"
             value={selectedVoice} onChange={event => setSelectedVoice(event.target.value)}>
             <option value="">Select a voice</option>
-            {isInstalled && voiceList?.map(voice =>
+            {isInstalled && availableVoices?.map(voice =>
               <option key={voice.id} value={`PocketTTS ${voice.id}`}>{voice.label}</option>
             )}
-            {isInstalled && pickedVoices.length > 0 &&
-              <optgroup label="Voice donations">
-                {pickedVoices.map(voice =>
-                  <option key={voice.id} value={`PocketTTS ${voice.id}`}>{voice.label}</option>
-                )}
-              </optgroup>
-            }
+
           </select>
           <div className="d-flex align-items-center mt-3">
             {test.current == null &&
@@ -319,18 +335,20 @@ function App() {
           <thead className="table-light">
             <tr>
               <th>Voice</th>
-              <th>Language</th>
               <th>Source</th>
             </tr>
           </thead>
           <tbody>
-          {voiceList?.map(voice =>
+          {availableVoices?.map(voice =>
             <tr key={voice.id}>
               <td>
                 <span className="me-1">{voice.label}</span>
                 <span className="link" onClick={() => sampler.play(voice)}>sample</span>
+                {addedVoices.some(added => added.id == voice.id) && !voiceList?.some(builtin => builtin.id == voice.id) &&
+                  <button type="button" className="btn btn-sm btn-outline-danger ms-2"
+                    onClick={() => onRemoveDonatedVoice(voice.id)}>Remove</button>
+                }
               </td>
-              <td className="align-top">{voice.lang}</td>
               <td className="align-top">
                 <a target="_blank" href={voice.sourceUrl}>{voice.source}</a>
                 <span className="ms-1">(<a target="_blank" href={voice.clip}>{voice.license}</a>)</span>
@@ -347,6 +365,7 @@ function App() {
 
       <div className="mb-4">
         <h2 className="text-muted">Voice Donations</h2>
+        <p className="form-text">Add voices to keep them in your voice list and use them with Read Aloud extensions after model installation. Selections are saved in this browser.</p>
         {donations == null &&
           <button type="button" className="btn btn-outline-secondary" onClick={onBrowseDonations}>Browse all donations</button>
         }
@@ -374,8 +393,13 @@ function App() {
                     <td>
                       <span className="me-2">{voice.label}</span>
                       <span className="link me-2" onClick={() => sampler.play(voice)}>play clip</span>
-                      {isInstalled &&
-                        <span className="link" onClick={() => onUseDonatedVoice(voice)}>use in test form</span>
+                      {voiceList?.some(builtin => builtin.id == voice.id)
+                        ? <span className="text-muted">Included</span>
+                        : addedVoices.some(added => added.id == voice.id)
+                          ? <button type="button" className="btn btn-sm btn-outline-danger"
+                              onClick={() => onRemoveDonatedVoice(voice.id)}>Remove</button>
+                          : <button type="button" className="btn btn-sm btn-outline-primary"
+                              onClick={() => onAddDonatedVoice(voice)}>Add voice</button>
                       }
                     </td>
                   </tr>
@@ -868,12 +892,27 @@ function App() {
   }
 
   //donated clips aren't installed, the SW caches each one when it is first used
-  function onUseDonatedVoice(voice: MyVoice) {
-    registerVoice(voice)
-    setPickedVoices(voices => voices.some(x => x.id == voice.id) ? voices : [...voices, voice])
-    setSelectedVoice(`PocketTTS ${voice.id}`)
-    setShowTestForm(true)
-    scrollTo({ top: 0, behavior: 'smooth' })
+  function onAddDonatedVoice(voice: MyVoice) {
+    try {
+      const saved = loadAddedVoices()
+      const next = saved.some(item => item.id == voice.id) ? saved : [...saved, voice]
+      saveAddedVoices(next)
+      registerVoice(voice)
+      setAddedVoices(next)
+    } catch (err) {
+      reportError(new Error(`Could not save the added voice: ${err}`))
+    }
+  }
+
+  function onRemoveDonatedVoice(id: string) {
+    try {
+      const next = loadAddedVoices().filter(voice => voice.id != id)
+      saveAddedVoices(next)
+      setAddedVoices(next)
+      //Keep the registry entry alive for any speech already in progress.
+    } catch (err) {
+      reportError(new Error(`Could not remove the saved voice: ${err}`))
+    }
   }
 
   function onTestSpeak(event: React.MouseEvent<HTMLButtonElement>) {

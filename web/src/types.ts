@@ -2,7 +2,6 @@
 export interface MyVoice {
   readonly id: string
   readonly label: string
-  readonly lang: string
   //URL of the reference clip the voice is cloned from
   readonly clip: string
   //URL of a synthesized sample, falls back to the clip

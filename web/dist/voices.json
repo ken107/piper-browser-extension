@@ -3,7 +3,6 @@
     {
       "id": "alba",
       "label": "Alba",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/alba-mackenna/casual.wav",
       "license": "CC BY 4.0",
       "source": "Alba MacKenna",
@@ -13,7 +12,6 @@
     {
       "id": "anna",
       "label": "Anna",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p228_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -23,7 +21,6 @@
     {
       "id": "azelma",
       "label": "Azelma",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p303_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -33,7 +30,6 @@
     {
       "id": "bill_boerst",
       "label": "Bill Boerst",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/voice-zero/bill_boerst.wav",
       "license": "CC0",
       "source": "Voice-Zero (LibriVox)",
@@ -43,7 +39,6 @@
     {
       "id": "caro_davy",
       "label": "Caro Davy",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/voice-zero/caro_davy.wav",
       "license": "CC0",
       "source": "Voice-Zero (LibriVox)",
@@ -53,7 +48,6 @@
     {
       "id": "charles",
       "label": "Charles",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p254_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -63,7 +57,6 @@
     {
       "id": "eponine",
       "label": "Eponine",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p262_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -73,7 +66,6 @@
     {
       "id": "eve",
       "label": "Eve",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p361_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -83,7 +75,6 @@
     {
       "id": "fantine",
       "label": "Fantine",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p244_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -93,7 +84,6 @@
     {
       "id": "george",
       "label": "George",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p315_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -103,7 +93,6 @@
     {
       "id": "jane",
       "label": "Jane",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p339_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -113,7 +102,6 @@
     {
       "id": "javert",
       "label": "Javert",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/voice-donations/Butter.wav",
       "license": "CC0",
       "source": "Unmute Voice Donation Project",
@@ -123,7 +111,6 @@
     {
       "id": "marius",
       "label": "Marius",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/voice-donations/Selfie.wav",
       "license": "CC0",
       "source": "Unmute Voice Donation Project",
@@ -133,7 +120,6 @@
     {
       "id": "mary",
       "label": "Mary",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p333_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -143,7 +129,6 @@
     {
       "id": "michael",
       "label": "Michael",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p360_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -153,7 +138,6 @@
     {
       "id": "paul",
       "label": "Paul",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p259_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",
@@ -163,7 +147,6 @@
     {
       "id": "peter_yearsley",
       "label": "Peter Yearsley",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/voice-zero/peter_yearsley.wav",
       "license": "CC0",
       "source": "Voice-Zero (LibriVox)",
@@ -173,7 +156,6 @@
     {
       "id": "stuart_bell",
       "label": "Stuart Bell",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/voice-zero/stuart_bell.wav",
       "license": "CC0",
       "source": "Voice-Zero (LibriVox)",
@@ -183,7 +165,6 @@
     {
       "id": "vera",
       "label": "Vera",
-      "lang": "en-US",
       "clip": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p229_023_enhanced.wav",
       "license": "CC BY 4.0",
       "source": "VCTK corpus, CSTR, University of Edinburgh",

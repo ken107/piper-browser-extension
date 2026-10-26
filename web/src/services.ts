@@ -48,6 +48,32 @@ export function registerVoice(voice: MyVoice) {
   voiceRegistry.set(voice.id, voice)
 }
 
+export const addedVoicesStorageKey = 'pocketAddedVoices'
+
+export function loadAddedVoices(): MyVoice[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(addedVoicesStorageKey) ?? '[]')
+    if (!Array.isArray(saved)) return []
+    const voices = new Map<string, MyVoice>()
+    for (const voice of saved) {
+      if (!voice || !['id', 'label', 'clip', 'license', 'source', 'sourceUrl']
+        .every(key => typeof voice[key] == 'string')) continue
+      if (!voice.id || /\s/.test(voice.id) ||
+        !voice.clip.startsWith(`${config.voicesRepoPath}/voice-donations/`) ||
+        voice.sourceUrl != 'https://unmute.sh/voice-donation') continue
+      //Only restore the fields used by donated voices, not arbitrary saved properties.
+      const { id, label, clip, license, source, sourceUrl } = voice
+      voices.set(id, { id, label, clip, license, source, sourceUrl })
+    }
+    return [...voices.values()]
+  } catch { return [] }
+}
+
+export function saveAddedVoices(voices: readonly MyVoice[]) {
+  //Let the caller report storage errors instead of pretending the selection was saved.
+  localStorage.setItem(addedVoicesStorageKey, JSON.stringify(voices))
+}
+
 export function getVoice(voiceId: string) {
   const voice = voiceRegistry.get(voiceId)
   if (!voice) throw new Error(`Unknown voice: ${voiceId}`)
@@ -88,7 +114,6 @@ export async function listDonatedVoices(): Promise<MyVoice[]> {
   return [...clips].map(([stem, path]) => ({
     id: stem,
     label: stem.replace(/_+/g, ' ').trim(),
-    lang: '',
     clip: `${config.voicesRepoPath}/${path.split('/').map(encodeURIComponent).join('/')}`,
     license: 'CC0',
     source: 'Unmute Voice Donation Project',
@@ -97,7 +122,7 @@ export async function listDonatedVoices(): Promise<MyVoice[]> {
 }
 
 
-export function advertiseVoices(voiceList: readonly MyVoice[]) {
+export function advertiseVoices(voiceList: readonly MyVoice[], modelLanguage: string) {
   (parent ?? opener)?.postMessage(<Message>{
     type: "notification",
     to: "pocket-host",
@@ -105,7 +130,7 @@ export function advertiseVoices(voiceList: readonly MyVoice[]) {
     args: {
       voices: voiceList.map(voice => ({
         voiceName: `PocketTTS ${voice.id}`,
-        lang: voice.lang,
+        lang: modelLanguage,
         eventTypes: ["start", "sentence", "end", "error"]
       }))
     }
