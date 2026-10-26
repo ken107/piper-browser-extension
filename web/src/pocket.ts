@@ -54,6 +54,11 @@ const CHUNK_GAP_SECONDS = 0.25
 //a fresh decoder state starts with a small step, heard as a click, so fade in each chunk (as pocket-tts does)
 const FADE_IN_SECONDS = 0.005
 const MAX_CLIP_SECONDS = 30
+//the model pads speech with a variable amount of near-silence, which made the pauses between
+//sentences uneven; trim it down to these margins so the page's own sentence pauses set the spacing
+const SILENCE_THRESHOLD_DB = -40
+const KEEP_LEADING_SECONDS = 0.04
+const KEEP_TRAILING_SECONDS = 0.1
 //voice states hold the full KV cache (~50 MB each), so keep only the most recently used
 const MAX_CACHED_VOICE_STATES = 2
 
@@ -173,6 +178,7 @@ export class PocketTts {
 
     for (const chunkText of chunks) {
       if (audioParts.length) audioParts.push(new Float32Array(Math.floor(CHUNK_GAP_SECONDS * this.sampleRate)))
+      const chunkParts: Float32Array[] = []
 
       const flowState: State = { ...baseFlowState }
       const mimiState = initState(this.metadata.mimi_state_manifest)
@@ -233,11 +239,12 @@ export class PocketTts {
           updateState(mimiState, decodeResult, this.metadata.mimi_state_manifest)
           const audio = new Float32Array(decodeResult[this.mimiDecoder.outputNames[0]].data as Float32Array)
           if (decoded == 0) fadeIn(audio, Math.floor(FADE_IN_SECONDS * this.sampleRate))
-          audioParts.push(audio)
+          chunkParts.push(audio)
           decoded += pending
         }
         if (shouldStop) break
       }
+      audioParts.push(trimSilence(concat(chunkParts), this.sampleRate))
     }
 
     return concat(audioParts)
@@ -382,6 +389,36 @@ function gaussian() {
 function fadeIn(audio: Float32Array, length: number) {
   const n = Math.min(length, audio.length)
   for (let i = 0; i < n; i++) audio[i] *= i / n
+}
+
+//cut leading and trailing audio quieter than SILENCE_THRESHOLD_DB below the peak, keeping small margins
+export function trimSilence(audio: Float32Array, sampleRate: number) {
+  let peak = 0
+  for (let i = 0; i < audio.length; i++) peak = Math.max(peak, Math.abs(audio[i]))
+  if (peak == 0) return audio
+  const threshold = peak * Math.pow(10, SILENCE_THRESHOLD_DB / 20)
+  const window = Math.floor(0.01 * sampleRate)
+  const isLoud = (start: number) => {
+    let sum = 0
+    const end = Math.min(start + window, audio.length)
+    for (let i = start; i < end; i++) sum += audio[i] * audio[i]
+    return Math.sqrt(sum / (end - start)) > threshold
+  }
+  let first = 0
+  while (first < audio.length && !isLoud(first)) first += window
+  let last = audio.length
+  while (last > first && !isLoud(Math.max(first, last - window))) last -= window
+  if (first >= last) return audio
+  const start = Math.max(0, first - Math.floor(KEEP_LEADING_SECONDS * sampleRate))
+  const end = Math.min(audio.length, last + Math.floor(KEEP_TRAILING_SECONDS * sampleRate))
+  const trimmed = audio.slice(start, end)
+  //cutting can land on a non-zero sample, so ramp the new edges
+  const ramp = Math.min(Math.floor(0.005 * sampleRate), trimmed.length >> 1)
+  for (let i = 0; i < ramp; i++) {
+    if (start > 0) trimmed[i] *= i / ramp
+    if (end < audio.length) trimmed[trimmed.length - 1 - i] *= i / ramp
+  }
+  return trimmed
 }
 
 function concat(parts: Float32Array[]) {
