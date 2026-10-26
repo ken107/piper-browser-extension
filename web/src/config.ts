@@ -1,4 +1,4 @@
-const appVer = '4'
+const appVer = '5'
 const ortVer = '1.23.2'
 const pocketVer = '2'
 
